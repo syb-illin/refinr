@@ -9,3 +9,13 @@ __pycache__/
 *.smoketest_out.wav
 .DS_Store
 tests/fixtures/
+
+# Presets AU personnels (FabFilter/Softube/BackBox/Waves) : jamais versionnés,
+# uniquement travaillés en local. Seuls les .gitkeep restent trackés pour
+# préserver l'arborescence.
+config/presets/eq/*
+config/presets/saturation/*
+config/presets/tape/*
+!config/presets/eq/.gitkeep
+!config/presets/saturation/.gitkeep
+!config/presets/tape/.gitkeep
