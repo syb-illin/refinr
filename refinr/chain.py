@@ -4,8 +4,12 @@ Orchestrateur de la chaîne de traitement complète, PAR FICHIER :
   1. Analyse du WAV source (analysis.py)
   2. Gain staging vers -18 LUFS (loudness.py) — pour ne pas exploser les
      plugins de retraitement avec des sources qui sortent à des niveaux très chauds
-  3. Sélection des presets AU spécifiques à CE fichier (preset_mapping.py)
-     pour EQ (Pro-Q4) -> Saturation (Saturn2/HG2) -> Tape (J37)
+  3. EQ Pro-Q4 : PILOTAGE AUTOMATIQUE (proq4_control.decide_bands), pas de
+     sélection parmi des presets figés — les réglages (fréquence/gain/Q/
+     forme/pente/stéréo/dynamique) sont décidés directement à partir de
+     l'analyse de CE fichier. Saturation (Saturn2/HG2) et Tape (J37) restent
+     sur sélection de presets par tags (preset_mapping.py) — ces plugins
+     n'ont pas encore été reverse-engineered pour un pilotage fin.
   4. Traitement réel via les AU (au_host.py, macOS uniquement)
   5. Leveling final vers le profil de destination choisi (loudness.py :
      gain vers target_lufs + limiteur true-peak de sécurité)
@@ -13,7 +17,8 @@ Orchestrateur de la chaîne de traitement complète, PAR FICHIER :
 
 Sur un OS non-macOS (dev/test), l'étape 4 est court-circuitée (le signal
 gain-staged passe tel quel) pour que tout le reste du pipeline (analyse,
-sélection, leveling, reporting, batch) reste testable de bout en bout.
+décision EQ, sélection saturation/tape, leveling, reporting, batch) reste
+testable de bout en bout.
 """
 
 from __future__ import annotations
@@ -29,8 +34,25 @@ from .audio_io import AudioBuffer, load_wav, save_wav
 from .preset_mapping import PresetLibrary, select_chain
 from .preset_types import ChainStepReport, PluginRole
 from .profiles import DestinationProfile, ProfileCatalog
+from .proq4_control import Band, decide_bands, make_dynamic_preset
 
 AU_HOSTING_AVAILABLE = sys.platform == "darwin"
+
+
+def _describe_band(b: Band) -> str:
+    parts = [f"{b.shape} {b.freq_hz:.0f}Hz"]
+    if b.gain_db:
+        parts.append(f"{b.gain_db:+.1f}dB")
+    if b.q != 1.0:
+        parts.append(f"Q{b.q:.2f}")
+    if b.slope_db_per_oct:
+        parts.append(f"{b.slope_db_per_oct:.0f}dB/oct")
+    if b.stereo != "stereo":
+        parts.append(b.stereo)
+    if b.dynamic_range_db:
+        auto = " auto" if b.dynamic_auto_threshold else ""
+        parts.append(f"dyn{auto} {b.dynamic_range_db:+.1f}dB")
+    return " ".join(parts)
 
 
 @dataclasses.dataclass
@@ -85,29 +107,47 @@ def process_file(
     )
     post_gain_measurement = loudness.measure(gained_buffer)
 
-    selection = select_chain(library, file_analysis, roles=(PluginRole.EQ, PluginRole.SATURATION, PluginRole.TAPE))
+    # EQ Pro-Q4 : TOUJOURS piloté dynamiquement (proq4_control), jamais de
+    # sélection de preset. Saturation/Tape : sélection par tags, faute
+    # d'avoir reverse-engineered Saturn2/HG2/J37 pour l'instant.
+    eq_bands = decide_bands(file_analysis)
+    eq_reason = "EQ Pro-Q4 piloté dynamiquement : " + "; ".join(_describe_band(b) for b in eq_bands)
+    eq_preset = make_dynamic_preset(f"refinr auto EQ — {input_path.name}", eq_bands)
+
+    selection = select_chain(library, file_analysis, roles=(PluginRole.SATURATION, PluginRole.TAPE))
 
     steps: list[ChainStepReport] = []
     processed_buffer = gained_buffer
 
-    ordered_roles = [PluginRole.EQ, PluginRole.SATURATION, PluginRole.TAPE]
-    chosen_presets = []
-    for role in ordered_roles:
+    chosen_extra_presets = []  # saturation/tape uniquement, EQ traité à part
+    for role in (PluginRole.SATURATION, PluginRole.TAPE):
         result = selection[role]
         if result.preset is None:
             warnings.append(f"Rôle '{role.value}' ignoré: {result.reason}")
             continue
-        chosen_presets.append((role, result))
+        chosen_extra_presets.append((role, result))
 
-    if AU_HOSTING_AVAILABLE and chosen_presets:
+    if AU_HOSTING_AVAILABLE:
         from . import au_host  # import tardif : indisponible hors macOS
 
         pre_measure = loudness.measure(processed_buffer)
-        presets_in_order = [result.preset for _role, result in chosen_presets]
+        presets_in_order = [eq_preset] + [result.preset for _role, result in chosen_extra_presets]
         processed_buffer, _render_result = au_host.process_chain_offline(processed_buffer, presets_in_order)
         post_measure = loudness.measure(processed_buffer)
 
-        for role, result in chosen_presets:
+        steps.append(
+            ChainStepReport(
+                role=PluginRole.EQ.value,
+                plugin_name="FabFilter Pro-Q4 (pilotage dynamique)",
+                preset_name="auto",
+                preset_path="",
+                reason=eq_reason,
+                pre_measurement=_measurement_to_dict(pre_measure),
+                post_measurement=_measurement_to_dict(post_measure),
+                extra={"bands": [_describe_band(b) for b in eq_bands]},
+            )
+        )
+        for role, result in chosen_extra_presets:
             steps.append(
                 ChainStepReport(
                     role=role.value,
@@ -120,12 +160,23 @@ def process_file(
                 )
             )
     else:
-        if not AU_HOSTING_AVAILABLE:
-            warnings.append(
-                "Hosting AU indisponible sur cet OS (macOS requis) — la chaîne EQ/saturation/tape "
-                "n'a PAS été appliquée, seul le gain staging + leveling final ont été effectués."
+        warnings.append(
+            "Hosting AU indisponible sur cet OS (macOS requis) — la chaîne EQ/saturation/tape "
+            "n'a PAS été appliquée, seul le gain staging + leveling final ont été effectués."
+        )
+        steps.append(
+            ChainStepReport(
+                role=PluginRole.EQ.value,
+                plugin_name="FabFilter Pro-Q4 (pilotage dynamique)",
+                preset_name="auto",
+                preset_path="",
+                reason=eq_reason + " [SIMULÉ — AU non appliqué hors macOS]",
+                pre_measurement={},
+                post_measurement={},
+                extra={"bands": [_describe_band(b) for b in eq_bands]},
             )
-        for role, result in chosen_presets:
+        )
+        for role, result in chosen_extra_presets:
             steps.append(
                 ChainStepReport(
                     role=role.value,
@@ -178,5 +229,5 @@ def process_file(
         final_measurement=_measurement_to_dict(final_measurement),
         warnings=warnings,
         duration_seconds=round(duration, 3),
-        au_hosting_used=AU_HOSTING_AVAILABLE and bool(chosen_presets),
+        au_hosting_used=AU_HOSTING_AVAILABLE,
     )
