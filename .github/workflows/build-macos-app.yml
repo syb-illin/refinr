@@ -15,10 +15,15 @@ jobs:
     # Runner macOS hébergé par GitHub, Apple Silicon natif (arm64).
     runs-on: macos-14
 
-    steps:
-      - uses: actions/checkout@v4
+    # Nécessaire pour que softprops/action-gh-release puisse créer la
+    # Release (le GITHUB_TOKEN par défaut est en lecture seule sinon).
+    permissions:
+      contents: write
 
-      - uses: actions/setup-python@v5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -50,7 +55,7 @@ jobs:
           zip -r -q "../Refinr_v${{ steps.version.outputs.version }}.zip" "Refinr.app"
 
       - name: Upload de l'artifact de build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Refinr-v${{ steps.version.outputs.version }}
           path: Refinr_v${{ steps.version.outputs.version }}.zip
@@ -58,7 +63,7 @@ jobs:
 
       - name: Créer une GitHub Release (uniquement si déclenché par un tag)
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: Refinr_v${{ steps.version.outputs.version }}.zip
           generate_release_notes: true
