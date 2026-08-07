@@ -12,7 +12,7 @@ Gain staging → EQ → Saturation → Tape → Leveling par profil de destinati
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![GUI](https://img.shields.io/badge/GUI-PyQt6-41CD52?logo=qt&logoColor=white)
 ![Bridge](https://img.shields.io/badge/audio%20engine-ctypes%20%2F%20AudioToolbox-0A84FF)
-![Version](https://img.shields.io/badge/version-0.1.7-orange)
+![Version](https://img.shields.io/badge/version-0.1.8-orange)
 ![Status](https://img.shields.io/badge/status-en%20d%C3%A9veloppement-yellow)
 
 **Repo :** [github.com/syb-illin/refinr](https://github.com/syb-illin/refinr)
