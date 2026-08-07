@@ -18,15 +18,13 @@ OPTIONS = {
     "argv_emulation": False,
     "packages": ["refinr", "gui"],
     "includes": [
-        "AVFoundation",
-        "AudioToolbox",
         "Foundation",
     ],
     "plist": {
         "CFBundleName": "Refinr",
         "CFBundleDisplayName": "Refinr",
         "CFBundleIdentifier": "local.refinr",
-        "CFBundleShortVersionString": "0.1.0",
+        "CFBundleShortVersionString": "0.1.1",
         "NSHumanReadableCopyright": "Usage personnel",
         # Nécessaire si l'app doit un jour lire des fichiers audio via
         # microphone/entrées ; pour du traitement offline de fichiers WAV

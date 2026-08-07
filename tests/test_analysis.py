@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from refinr.analysis import analyze
 from refinr.audio_io import AudioBuffer
-from tests.generate_test_audio import make_bright, make_dark, make_suno_hot_clipped, SR
+from tests.generate_test_audio import make_bright, make_dark, make_hot_clipped_source, SR
 
 
 def _buffer_from(samples):
@@ -29,7 +29,7 @@ def test_dark_signal_tagged_dark():
 
 
 def test_hot_signal_has_measurable_dynamics():
-    a = analyze(_buffer_from(make_suno_hot_clipped()))
+    a = analyze(_buffer_from(make_hot_clipped_source()))
     assert a.dynamics.crest_factor_db > 0
     assert 0.0 <= a.dynamics.clipping_ratio <= 1.0
 

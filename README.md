@@ -2,7 +2,7 @@
 
 # 🎚️ Refinr
 
-**Retraitement audio automatisé pour fichiers WAV Suno AI — via tes vrais plugins Audio Unit**
+**Retraitement audio automatisé pour fichiers WAV bruts — via tes vrais plugins Audio Unit**
 
 Gain staging → EQ → Saturation → Tape → Leveling par profil de destination, spécifique à chaque fichier, jamais générique.
 
@@ -10,8 +10,8 @@ Gain staging → EQ → Saturation → Tape → Leveling par profil de destinati
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Apple%20Silicon-black?logo=apple&logoColor=white)
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![GUI](https://img.shields.io/badge/GUI-PyQt6-41CD52?logo=qt&logoColor=white)
-![Bridge](https://img.shields.io/badge/audio%20engine-AVFoundation%20%2F%20PyObjC-0A84FF)
-![Version](https://img.shields.io/badge/version-0.1.0-orange)
+![Bridge](https://img.shields.io/badge/audio%20engine-ctypes%20%2F%20AudioToolbox-0A84FF)
+![Version](https://img.shields.io/badge/version-0.1.1-orange)
 ![Status](https://img.shields.io/badge/status-en%20d%C3%A9veloppement-yellow)
 
 **Repo :** [github.com/syb-illin/refinr](https://github.com/syb-illin/refinr)
@@ -38,9 +38,9 @@ Gain staging → EQ → Saturation → Tape → Leveling par profil de destinati
 
 ## Le concept
 
-Suno exporte des WAV chauds, souvent proches de l'écrêtage, avec un rendu
-générique côté timbre et dynamique. Refinr reprend chaque fichier
-individuellement :
+Beaucoup de sources exportent des WAV chauds, souvent proches de
+l'écrêtage, avec un rendu générique côté timbre et dynamique. Refinr
+reprend chaque fichier individuellement :
 
 | Étape | Ce qui se passe |
 |---|---|
@@ -54,13 +54,18 @@ individuellement :
 
 ---
 
-## Pourquoi Python + PyObjC, pas Swift/Xcode
+## Pourquoi Python + ctypes, pas Swift/Xcode
 
-Hoster des Audio Units nécessite les frameworks Apple AudioToolbox /
-AVFoundation. **PyObjC** (pont officiel Python↔Objective-C) permet de les
-piloter sans écrire de Swift. Seul prérequis : les **Xcode Command Line
-Tools** (`xcode-select --install`, ~500 Mo, gratuit — pas besoin d'ouvrir
-Xcode.app), nécessaires pour compiler les bridges PyObjC et packager l'app.
+Hoster des Audio Units nécessite l'API C **AudioToolbox** (Audio Component
+Manager : recherche, instanciation, rendu). Cette API n'est PAS wrappée par
+PyObjC (vérifié dans la doc officielle PyObjC — AudioToolbox/AudioUnit n'ont
+aucun wrapper Python), donc `refinr/au_host.py` l'appelle directement via
+**`ctypes`** (bibliothèque standard, zéro dépendance). **PyObjC** n'intervient
+que pour une seule chose : convertir le dict du preset en `NSDictionary`, seul
+format accepté pour restaurer l'état d'un plugin (`kAudioUnitProperty_ClassInfo`).
+Seul prérequis : les **Xcode Command Line Tools** (`xcode-select --install`,
+~500 Mo, gratuit — pas besoin d'ouvrir Xcode.app), nécessaires pour compiler
+le bridge PyObjC et packager l'app.
 
 ---
 
@@ -79,7 +84,7 @@ macOS disponible pendant le développement).
 | `refinr/batch.py` | parallélisme + agrégation | ✅ |
 | `refinr/report.py` | rapport JSON + HTML | ✅ |
 | `tools/inspect_aupreset.py` | inspection de `.aupreset` | ✅ (plistlib pur, cross-OS) |
-| **`refinr/au_host.py`** | **hosting AU réel (PyObjC/AVFoundation)** | ❌ **macOS requis — à valider chez toi** |
+| **`refinr/au_host.py`** | **hosting AU réel (ctypes + AudioToolbox)** | ❌ **macOS requis — à valider chez toi** |
 | **`gui/*.py`** | interface PyQt6 | ⚠️ syntaxe vérifiée, non exécutée |
 
 <details>
@@ -87,25 +92,22 @@ macOS disponible pendant le développement).
 
 <br>
 
-`au_host.py` suit le pattern standard documenté par Apple (`AVAudioEngine`
-en *manual rendering mode* pour un rendu offline, `AUAudioUnit.fullState`
-pour recharger un `.aupreset`), mais certains noms de sélecteurs PyObjC
-peuvent nécessiter un ajustement mineur selon ta version de `pyobjc`.
+`au_host.py` appelle l'API C AudioToolbox (`AudioComponentFindNext`,
+`AudioComponentInstanceNew`, `AudioUnitInitialize`, `AudioUnitSetProperty`,
+`AudioUnitRender`) directement via `ctypes`, avec des structures et
+constantes (IDs de propriété, flags de format) tirées des headers Apple
+`AUComponent.h` / `CoreAudioTypes.h` — stables depuis longtemps, mais je
+n'ai pas pu les exécuter pendant l'écriture (pas de macOS disponible ici).
 
 **Étape 1 sur ta machine :** lance `tools/au_host_smoketest.py` (utilise
 l'AU système Apple `AULowpass`, donc sans dépendre de tes plugins
-commerciaux) pour isoler d'éventuels problèmes de bridge avant de
+commerciaux) pour isoler d'éventuels problèmes bas niveau avant de
 brancher FabFilter / Softube / Waves.
 
-Si ça plante avec une `AttributeError` sur un sélecteur, introspecte le
-module concerné :
-
-```python
-from AVFoundation import AVAudioEngine
-[m for m in dir(AVAudioEngine) if "render" in m.lower()]
-```
-
-et ajuste le nom exact dans `au_host.py`.
+En cas d'erreur, `au_host.py` lève une `RuntimeError` avec le code
+`OSStatus` retourné par l'appel qui a échoué (décodé en FourCC lisible
+quand c'est possible, ex: `-10863 ('...')`) — utile pour chercher l'erreur
+précise dans la doc Apple ou m'indiquer où corriger.
 
 </details>
 
@@ -121,7 +123,7 @@ cd refinr
 ./build_and_package.sh
 ```
 
-→ produit `releases/Refinr_v0.1.0_<date-heure>.zip`. Relance ce même
+→ produit `releases/Refinr_v0.1.1_<date-heure>.zip`. Relance ce même
 script à chaque fois que le code change (nouvelle version dans
 `refinr/__init__.py` → nom de zip différent, historique conservé dans
 `releases/`).
@@ -146,32 +148,21 @@ Repo déjà créé : **https://github.com/syb-illin/refinr**
 
 <br>
 
-Je n'ai ni `gh` ni identifiants GitHub liés à ton compte dans mon
-environnement d'exécution (vérifié : pas de token, pas de session
-`gh auth`), donc je ne peux pas pousser à ta place. Le repo git est déjà
-initialisé avec un premier commit dans le zip livré :
+`main` et le tag `v0.1.0` sont déjà poussés. Pour les builds suivants :
+change `__version__` dans `refinr/__init__.py`, commit, tag
+(`git tag v0.1.1 && git push --tags`) — nouvelle Release automatique. Le
+bouton **"Run workflow"** (onglet Actions) permet aussi un build ponctuel
+sans tag (artifact téléchargeable 90 jours, pas de Release).
 
-```bash
-cd refinr
-git remote add origin git@github.com:syb-illin/refinr.git
-git push -u origin main
-
-git tag v0.1.0
-git push --tags
-# -> l'onglet "Actions" du repo lance le build, puis le zip apparaît
-#    dans "Releases" une fois terminé (quelques minutes).
-```
-
-Pour les builds suivants : change `__version__` dans `refinr/__init__.py`,
-commit, tag (`git tag v0.1.1 && git push --tags`) — nouvelle Release
-automatique. Le bouton **"Run workflow"** (onglet Actions) permet aussi un
-build ponctuel sans tag (artifact téléchargeable 90 jours, pas de Release).
-
-💡 Si tu veux que je pousse moi-même la prochaine fois : donne-moi un
-token GitHub (Personal Access Token, scope `repo` + `workflow`, idéalement
-limité à ce seul repo) collé dans le chat — j'installerai `gh`, m'y
-authentifierai, et gérerai push/tag/monitoring du build sans que tu aies
-à taper quoi que ce soit. À toi de voir si tu es à l'aise avec ça.
+Je n'ai ni `gh` (pas installable : le réseau de mon environnement
+d'exécution bloque le téléchargement du binaire) ni `api.github.com`
+accessible pour suivre l'avancement d'un build — seul `git push`/`git tag`
+en HTTPS avec un token passe par le proxy autorisé. Si tu me donnes un
+Personal Access Token (scope `repo` + `workflow`, idéalement limité à ce
+seul repo, collé dans le chat), je peux pousser et taguer à ta place ;
+pour suivre le résultat du build (logs, statut), c'est à vérifier de ton
+côté sur https://github.com/syb-illin/refinr/actions — je ne peux pas le
+lire moi-même.
 
 </details>
 
@@ -310,7 +301,7 @@ refinr/
     analysis.py          features spectrales/dynamiques par fichier
     preset_types.py      PluginPreset, chargement .aupreset (plistlib)
     preset_mapping.py    bibliothèque + sélection de presets par fichier
-    au_host.py            hosting AU réel (PyObjC/AVFoundation) — macOS only
+    au_host.py            hosting AU réel (ctypes + AudioToolbox) — macOS only
     chain.py               orchestration complète par fichier
     batch.py                parallélisation (ProcessPoolExecutor)
     report.py                rapport JSON + HTML

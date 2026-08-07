@@ -31,12 +31,12 @@ def test_process_file_end_to_end(tmp_path):
     profile = catalog.get("spotify")
 
     out_path = tmp_path / "out.wav"
-    report = process_file(FIXTURES / "suno_hot_clipped.wav", out_path, library, profile, catalog)
+    report = process_file(FIXTURES / "hot_clipped_source.wav", out_path, library, profile, catalog)
 
     assert out_path.exists()
     assert report.final_measurement["true_peak_dbtp"] <= profile.true_peak_ceiling_dbtp + 0.05
     assert abs(report.final_measurement["integrated_lufs"] - profile.target_lufs) < 1.0
-    assert report.gain_staging_db != 0.0  # Suno hot -> gain staging doit bouger le niveau
+    assert report.gain_staging_db != 0.0  # source chaude -> gain staging doit bouger le niveau
 
 
 def test_batch_processes_all_files_in_parallel(tmp_path):

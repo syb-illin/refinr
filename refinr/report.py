@@ -20,7 +20,7 @@ _HTML_TEMPLATE = Template(
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<title>Rapport de traitement Suno — {{ generated_at }}</title>
+<title>Rapport de traitement Refinr — {{ generated_at }}</title>
 <style>
   body { font-family: -apple-system, Helvetica, Arial, sans-serif; margin: 2rem; color: #1a1a1a; background: #fafafa; }
   h1 { font-size: 1.4rem; }

@@ -1,8 +1,8 @@
 """
 Lecture / écriture WAV et petites structures de données audio partagées.
 
-Suno exporte généralement du 44.1kHz/16 ou 24-bit stéréo à des niveaux
-très élevés (souvent proches de 0 dBFS voire écrêtés). On travaille en
+Les sources traitées ici sont souvent en 44.1kHz/16 ou 24-bit stéréo, à des
+niveaux très élevés (souvent proches de 0 dBFS voire écrêtés). On travaille en
 interne en float32 pour garder de la marge, et on écrit en 24-bit ou
 32-bit float en sortie selon le profil de destination.
 """

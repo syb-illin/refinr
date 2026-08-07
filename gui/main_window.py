@@ -2,7 +2,7 @@
 Fenêtre principale de l'app.
 
 Flux :
-  1. Glisser-déposer (ou "Ajouter des fichiers...") des WAV Suno.
+  1. Glisser-déposer (ou "Ajouter des fichiers...") des WAV.
   2. Pour chaque fichier ajouté, on calcule immédiatement son analyse et la
      preview des presets qui seraient choisis (EQ/Saturation/Tape) — visible
      et modifiable avant de lancer quoi que ce soit (traitement JAMAIS
@@ -158,7 +158,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------ Actions
 
     def _on_add_files_clicked(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(self, "Choisir des WAV Suno", "", "WAV (*.wav)")
+        paths, _ = QFileDialog.getOpenFileNames(self, "Choisir des WAV", "", "WAV (*.wav)")
         self._add_files(paths)
 
     def _on_clear_clicked(self) -> None:

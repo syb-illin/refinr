@@ -3,7 +3,7 @@ Orchestrateur de la chaîne de traitement complète, PAR FICHIER :
 
   1. Analyse du WAV source (analysis.py)
   2. Gain staging vers -18 LUFS (loudness.py) — pour ne pas exploser les
-     plugins de retraitement avec les niveaux très chauds typiques de Suno
+     plugins de retraitement avec des sources qui sortent à des niveaux très chauds
   3. Sélection des presets AU spécifiques à CE fichier (preset_mapping.py)
      pour EQ (Pro-Q4) -> Saturation (Saturn2/HG2) -> Tape (J37)
   4. Traitement réel via les AU (au_host.py, macOS uniquement)
@@ -103,14 +103,8 @@ def process_file(
         from . import au_host  # import tardif : indisponible hors macOS
 
         pre_measure = loudness.measure(processed_buffer)
-        tmp_staged_path = output_path.with_suffix(".staged_tmp.wav")
-        save_wav(processed_buffer, tmp_staged_path, subtype="FLOAT")
-
-        tmp_processed_path = output_path.with_suffix(".chain_tmp.wav")
         presets_in_order = [result.preset for _role, result in chosen_presets]
-        au_host.process_chain_offline(str(tmp_staged_path), str(tmp_processed_path), presets_in_order)
-
-        processed_buffer = load_wav(tmp_processed_path)
+        processed_buffer, _render_result = au_host.process_chain_offline(processed_buffer, presets_in_order)
         post_measure = loudness.measure(processed_buffer)
 
         for role, result in chosen_presets:
@@ -125,9 +119,6 @@ def process_file(
                     post_measurement=_measurement_to_dict(post_measure),
                 )
             )
-
-        tmp_staged_path.unlink(missing_ok=True)
-        tmp_processed_path.unlink(missing_ok=True)
     else:
         if not AU_HOSTING_AVAILABLE:
             warnings.append(

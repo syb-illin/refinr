@@ -5,7 +5,7 @@ Analyse par fichier pour piloter une sélection de preset spécifique
 On extrait un jeu de "features" par fichier :
 - balance spectrale (graves/médiums/aigus, centroïde spectral)
 - dynamique (crest factor, loudness range)
-- niveau de saturation/écrêtage déjà présent dans le rendu Suno
+- niveau de saturation/écrêtage déjà présent dans la source
 - présence de sifflantes / dureté dans l'aigu (proxy simple, pas un
   détecteur de sifflantes dédié)
 - stéréo width approximatif
@@ -48,7 +48,7 @@ class SpectralProfile:
 @dataclasses.dataclass
 class DynamicsProfile:
     crest_factor_db: float          # peak - RMS, indicateur de compression déjà présente
-    clipping_ratio: float           # fraction d'échantillons proches de 0 dBFS (proxy d'écrêtage Suno)
+    clipping_ratio: float           # fraction d'échantillons proches de 0 dBFS (proxy d'écrêtage source)
     loudness_range_lu: float | None
     stereo_correlation: float       # -1..1, 1 = mono parfait, <0 = phase problématique
 

@@ -1,8 +1,8 @@
 """
 Génère des WAV synthétiques pour tester le pipeline sans dépendre de vrais
-exports Suno : un "Suno-like" très chaud/écrêté, un signal calme et
-dynamique, et un signal sombre vs. brillant pour vérifier l'analyse
-spectrale.
+fichiers sources : un signal très chaud/écrêté (typique d'une source non
+masterisée), un signal calme et dynamique, et un signal sombre vs. brillant
+pour vérifier l'analyse spectrale.
 
 Usage: python3 tests/generate_test_audio.py [output_dir]
 """
@@ -26,8 +26,8 @@ def _tone_mix(duration_s: float, freqs_amp: list[tuple[float, float]]) -> np.nda
     return sig.astype(np.float32)
 
 
-def make_suno_hot_clipped(duration_s: float = 8.0) -> np.ndarray:
-    """Simule un rendu Suno typique : chaud, quasi écrêté, spectre dense."""
+def make_hot_clipped_source(duration_s: float = 8.0) -> np.ndarray:
+    """Simule une source non masterisée typique : chaude, quasi écrêtée, spectre dense."""
     rng = np.random.default_rng(42)
     mono = _tone_mix(duration_s, [(110, 0.5), (440, 0.4), (2200, 0.25), (6000, 0.15)])
     mono += 0.05 * rng.standard_normal(mono.shape).astype(np.float32)
@@ -63,7 +63,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     files = {
-        "suno_hot_clipped.wav": make_suno_hot_clipped(),
+        "hot_clipped_source.wav": make_hot_clipped_source(),
         "calm_dynamic.wav": make_calm_dynamic(),
         "bright.wav": make_bright(),
         "dark.wav": make_dark(),

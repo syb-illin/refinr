@@ -16,7 +16,7 @@ from tests.generate_test_audio import (
     make_bright,
     make_calm_dynamic,
     make_dark,
-    make_suno_hot_clipped,
+    make_hot_clipped_source,
 )
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
@@ -25,7 +25,7 @@ FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 def pytest_configure(config):
     FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
     generators = {
-        "suno_hot_clipped.wav": make_suno_hot_clipped,
+        "hot_clipped_source.wav": make_hot_clipped_source,
         "calm_dynamic.wav": make_calm_dynamic,
         "bright.wav": make_bright,
         "dark.wav": make_dark,

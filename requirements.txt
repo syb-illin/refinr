@@ -9,13 +9,16 @@ pytest>=8.0           # utilisé par build_and_package.sh avant chaque build
 
 # --- macOS uniquement (hosting AU réel + GUI) ---
 # A installer seulement sur le Mac cible, dans un venv macOS.
-# pyobjc-core / pyobjc-framework-* nécessitent les Xcode Command Line Tools
-# (xcode-select --install) pour compiler les bridges natifs.
+# pyobjc-core / pyobjc-framework-Cocoa nécessitent les Xcode Command Line
+# Tools (xcode-select --install) pour compiler les bridges natifs.
+#
+# Note : AudioToolbox et AudioUnit (Audio Component Manager) sont des API C
+# pures, PAS wrappées par PyObjC (aucun package "pyobjc-framework-
+# AudioToolbox" n'existe sur PyPI). refinr/au_host.py les appelle donc
+# directement en `ctypes` (stdlib). PyObjC n'est utilisé que pour convertir
+# le dict du preset en NSDictionary (restauration de l'état du plugin).
 pyobjc-core>=10.1; sys_platform == "darwin"
 pyobjc-framework-Cocoa>=10.1; sys_platform == "darwin"
-pyobjc-framework-AVFoundation>=10.1; sys_platform == "darwin"
-pyobjc-framework-CoreAudio>=10.1; sys_platform == "darwin"
-pyobjc-framework-AudioToolbox>=10.1; sys_platform == "darwin"
 
 PyQt6>=6.6; sys_platform == "darwin"
 

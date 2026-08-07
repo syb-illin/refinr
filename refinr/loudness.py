@@ -2,8 +2,8 @@
 Mesure de loudness (ITU-R BS.1770-4 via pyloudnorm) et true peak (suréchantillonnage),
 + gain staging automatique en entrée de chaîne.
 
-Suno sort souvent des fichiers très chauds (proches de 0 dBFS, parfois déjà
-écrêtés numériquement). Avant de toucher aux plugins de retraitement
+Beaucoup de sources sortent des fichiers très chauds (proches de 0 dBFS,
+parfois déjà écrêtés numériquement). Avant de toucher aux plugins de retraitement
 (EQ/saturation/tape), on ramène systématiquement le niveau à une loudness
 d'entrée cible (-18 LUFS intégré par défaut) pour que les plugins réagissent
 comme sur un signal "normal" et ne saturent pas de façon incontrôlée.

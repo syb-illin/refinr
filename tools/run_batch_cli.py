@@ -5,7 +5,7 @@ le pipeline complet avant de lancer l'app graphique.
 
 Usage:
     python3 tools/run_batch_cli.py --profile spotify fichier1.wav fichier2.wav ...
-    python3 tools/run_batch_cli.py --profile youtube --workers 8 --out ~/SunoOut *.wav
+    python3 tools/run_batch_cli.py --profile youtube --workers 8 --out ~/RefinrOut *.wav
 """
 
 from __future__ import annotations
