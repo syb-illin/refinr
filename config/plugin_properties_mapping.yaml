@@ -1,0 +1,227 @@
+# Mapping des propriétés des plugins AU utilisés par le pipeline.
+#
+# Objectif : documenter, pour chaque plugin, comment son état AU
+# (kAudioUnitProperty_ClassInfo, restauré tel quel par refinr/au_host.py)
+# encode ses paramètres — pour pouvoir un jour choisir/ajuster des
+# réglages précis (fréquence, gain, Q, dynamique, mode stéréo, pente...)
+# à partir de l'analyse du WAV, plutôt que seulement sélectionner un
+# .aupreset entier via des tags (refinr/preset_mapping.py).
+#
+# ⚠️ Rien ici n'est utilisé par le code actuel. refinr/preset_mapping.py
+# fonctionne aujourd'hui en sélectionnant un .aupreset complet par tags
+# (voir *.meta.yaml à côté de chaque preset). Ce fichier sert de base de
+# connaissance si on veut, plus tard, ajuster des paramètres individuels
+# plutôt que choisir parmi des presets figés.
+#
+# Statut des champs : "confirmé" = vérifié par comparaison d'au moins 2
+# presets réels avec une valeur nominale connue (ex: nom du preset).
+# "hypothèse" = valeur plausible mais non vérifiée formellement — ne pas
+# s'y fier pour un mapping automatique tant que non confirmé.
+
+fabfilter_pro_q4:
+  role: eq
+  au_identifiers:
+    component_type: aumf        # PAS aufx — confirmé sur presets réels de l'utilisateur
+    component_subtype: FQ4p
+    component_manufacturer: FabF
+
+  state_format:
+    top_level_key: FabFilterPluginState   # PAS "data" (clé générique AU) — spécifique FabFilter
+    encoding: binaire propriétaire, préfixe magique "FFBS"
+    header:
+      - offset_bytes: 0
+        taille: 4
+        contenu: "magic 'FFBS'"
+      - offset_bytes: 4
+        taille: 4
+        contenu: "version (uint32 little-endian), vu = 1"
+      - offset_bytes: 8
+        taille: 4
+        contenu: "nombre de floats qui suivent (uint32 little-endian), vu = 600"
+      - offset_bytes: 12
+        taille: "4 * n_floats"
+        contenu: "tableau de floats little-endian (voir bands ci-dessous)"
+      - offset_bytes: "12 + 4*n_floats"
+        taille: variable
+        contenu: "reste du blob (~320 octets vus), contenu non identifié (méta globales ? état UI ?)"
+
+  bands:
+    statut: confirmé (structure)
+    nombre_de_bandes: 24              # 552 floats de bandes (24*23) + 48 floats de queue globale = 600
+    floats_par_bande: 23
+    note_importante: >
+      Contrairement à l'hypothèse de départ ("chaque preset = 1 bande"), l'inspection
+      réelle montre que plusieurs presets utilisent 2 à 5 bandes actives simultanément
+      (ex: 'for suno' en a 5, 'mine' en a 4, 'AG Vocal Clean Punch' en a 3). Un
+      sous-ensemble de presets à bande UNIQUE a servi de base fiable pour ce mapping :
+      100hz_1db_q1_5, stereo, side, cutl_lower_than_80, dynamique_threshold_auto.
+    # Index relatif au début du bloc de la bande (bande i commence à
+    # l'offset i*23 dans le tableau de floats).
+    champs_bande:
+      0:
+        nom: "band_enabled"
+        statut: confirmé
+        note: "1.0 sur toute bande utilisée (même partagée/template), 0.0 sur une bande vraiment inutilisée. Constant sur tout l'échantillon."
+      2:
+        nom: "frequency"
+        statut: confirmé
+        unite: "log2(Hz)"
+        preuve: "'100hz 1db Q1.5' -> 6.644 == log2(100) exact. 'side high pass 200h' -> 7.644 == log2(200) exact. Bande désactivée par défaut -> 9.966 == log2(1000), fréquence par défaut Pro-Q4."
+        formule_inverse: "hz = 2 ** valeur"
+      3:
+        nom: "gain_db"
+        statut: confirmé
+        preuve: "'100hz 1db Q1.5' -> 1.0 == +1dB, correspondance exacte avec le nom. 'dynamique avec threshold auto' -> -1.0 (cohérent, coupe dynamique légère)."
+      4:
+        nom: "Q (slider Q)"
+        statut: confirmé
+        formule: "raw = 0.5 + 0.094 * log2(Q)  <=>  Q = 2 ** ((raw - 0.5) / 0.094)"
+        preuve: >
+          3 presets de contrôle isolant uniquement le Q sur bande Bell, même
+          fréquence 200Hz ('BELL 200 Q1', 'BELL 200 Q1.5', 'BELL 200 Q2') :
+          Q=1 -> raw=0.5 (exact), Q=1.5 -> raw=0.554958, Q=2 -> raw=0.593951.
+          Les 3 points sont parfaitement linéaires en log2(Q) (pente constante
+          ≈0.09394 entre chaque paire), formule confirmée avec un écart <0.0001
+          sur les 3 points. Note : pour les formes High Pass/Low Pass, le Q
+          "réel" affiché par Pro-Q4 (ex: 0.7071 pour raw=0.5, vu via decoder
+          tiers) diffère du Q Bell pour la même valeur raw — c'est un artefact
+          de la topologie du filtre (DSP), PAS un encodage différent : cette
+          formule reste la même pour piloter le slider Q quelle que soit la
+          forme, Pro-Q4 l'interprète juste différemment selon le type de filtre.
+      5:
+        nom: "filter_shape"
+        statut: confirmé (recoupé source externe)
+        note: >
+          0.0 = Bell (défaut, notre échantillon). 2.0 = High Pass — confirmé
+          explicitement par le decoder tiers (proq4_summary.md, colonne "Shape"
+          affiche "High Pass" en toutes lettres pour raw=2.0 sur 4 instances
+          différentes). 4.0 vu sur bande 2 de 'abbey road' dans le même doc,
+          annotée "Low Pass". 3.0 confirmé = High Shelf via 'high shelf 200
+          2db.aupreset' (gain=+2.0 exact match avec le nom, freq=2000Hz réel
+          malgré le nom du fichier qui indique "200" — probable coquille de
+          nommage sans impact sur le mapping). 1.0 confirmé = Low Shelf via
+          'low shelf 200 2db.aupreset' (freq=200Hz exact, gain=+2dB exact).
+          6.0 confirmé = Band Pass via 'band pass 200.aupreset' (freq=200Hz
+          exact). 5.0 confirmé = Notch via 'notch 200.aupreset' (freq=200Hz
+          exact, comme prédit par la séquence). 7.0 confirmé = Tilt Shelf via
+          'tilt 200.aupreset'. 8.0 confirmé = Flat Tilt via 'tilt 200
+          flat.aupreset' (même fréquence, seul l'offset 5 diffère entre les
+          deux -> isolation parfaite). Enum COMPLÈTE et confirmée sur les 8
+          formes du menu Pro-Q4 : Bell=0, LowShelf=1, HighPass=2, HighShelf=3,
+          LowPass=4, Notch=5, BandPass=6, TiltShelf=7, FlatTilt=8. Allpass non
+          testé (n'apparaît pas dans le menu shape standard, probablement un
+          réglage séparé plutôt qu'une forme).
+      6:
+        nom: "slope_db_per_oct"
+        statut: confirmé
+        formule: "slope_dB_par_octave = valeur * 6"
+        preuve: >
+          3 presets de contrôle isolant uniquement la pente ('HP 100 -12db',
+          'HP 100 -18db', 'HP 100 -24db', tous High Pass 100Hz sinon
+          identiques) : -12dB/oct -> 2.0, -18dB/oct -> 3.0, -24dB/oct -> 4.0.
+          Correspondance exacte et linéaire (valeur*6=pente). Corrige une
+          hypothèse antérieure erronée : le défaut (2.0) correspond à
+          12dB/octave, PAS 24dB/octave comme supposé au départ. Valeurs 6/48dB
+          par octave (1.0/8.0) non testées mais la formule linéaire est solide
+          sur 3 points alignés.
+      7:
+        nom: "stereo_placement"
+        statut: confirmé (conflit résolu)
+        preuve: >
+          Résolu par 'BELL DYN STEREO -2DB.aupreset' : bande Bell explicitement
+          Stereo AVEC dynamique active (offset 9 = -1.9994 ≈ -2dB, cohérent avec
+          le nom). Offset 7 RESTE à sa valeur par défaut (2.0, absent de la
+          diff) malgré la dynamique ON -> élimine définitivement l'hypothèse
+          "dyn_mode" de la source externe (plugin_params.md). Enum confirmée :
+          Left=0(hypothèse), Right=1(hypothèse), Stereo=2(défaut), Mid=3, Side=4.
+      12:
+        nom: "band_active_secondaire (hypothèse)"
+        statut: hypothèse
+        note: "défaut 0.667, passe à 1.0 dès qu'une bande est modifiée — probablement lié à band_enabled (idx0) plutôt qu'un paramètre indépendant."
+      17:
+        nom: "unknown_a"
+        statut: hypothèse
+        note: "défaut 3.322 (==log2(10)?), passe à 6.644 (==log2(100)?) dès qu'une bande est modifiée — possiblement un paramètre de rendu graphique (zoom courbe EQ), pas un paramètre audio."
+      18:
+        nom: "unknown_b"
+        statut: hypothèse
+        note: "défaut 14.288, passe à 11.551 dès qu'une bande est modifiée. Non identifié."
+      9:
+        nom: "dynamic_range_db"
+        statut: confirmé_probable (2 presets nommés "dynamic")
+        preuve: >
+          Non-nul UNIQUEMENT sur les deux presets dont le nom contient
+          "dynamic"/"dynamique" : 'dynamique avec threshold auto' band0 -> -1.5,
+          '320hz mid cut dynamic' band1 -> -4.991. Défaut 0.0 partout ailleurs
+          (y compris sur des bandes statiques avec gain non-nul comme '100hz
+          1db'). Donc offset 9 != 0.0 = signal fiable "dynamique active sur
+          cette bande", et la magnitude est cohérente avec une plage de
+          réduction de gain dynamique (dB) — '320hz mid cut dynamic' (cut plus
+          marqué dans le nom) a une plage bien plus grande (-4.991) que
+          'threshold auto' (-1.5, réglage plus doux/par défaut).
+      11:
+        nom: "auto_threshold"
+        statut: confirmé_probable
+        preuve: >
+          Défaut 1.0. Passe à 0.0 UNIQUEMENT sur 'dynamique avec threshold
+          auto' — le seul preset des deux dont le nom mentionne explicitement
+          "auto" (seuil automatique). '320hz mid cut dynamic' (qui n'a PAS
+          "auto" dans son nom, seuil réglé manuellement) garde idx11=1.0
+          (défaut) alors que idx9 (dynamic_range) est bien actif chez lui aussi
+          -> les deux champs varient indépendamment, cohérent avec
+          auto_threshold=flag séparé de dynamic_range. Encodage probable :
+          1.0=manuel (défaut), 0.0=auto ON.
+    autres_index: "tous les autres index (1, 8, 10, 13-16, 19-22) sont restés constants sur l'échantillon observé — pas de variance, donc pas de sens attribuable sans presets de contrôle isolant un seul paramètre à la fois."
+
+  global_params:
+    statut: partiellement confirmé
+    note: >
+      Après les 552 floats de bandes (24*23), il reste 48 floats globaux
+      (indices absolus 552-599) qui s'appliquent au plugin entier, pas à une
+      bande précise.
+    champs:
+      552:
+        nom: "natural_phase_mode"
+        statut: confirmé
+        preuve: >
+          Diff exacte entre 'BELL DYN STEREO -2DB.aupreset' et 'BELL DYN
+          STEREO -2DB natural phase.aupreset' : UN SEUL float change dans tout
+          le blob de 600 floats, à l'index 552 (0.0 -> 1.0). Signal parfaitement
+          isolé. 0.0 = mode normal (zero latency/linear phase par défaut selon
+          réglage global du plugin), 1.0 = Natural Phase activé.
+      autres: "indices 553-599 non testés individuellement — candidats probables pour d'autres réglages globaux (mode processing, output level trim, analyzer settings...), non identifiés à ce stade."
+
+  methode_pour_completer:
+    - "Dans Pro-Q4, créer un preset avec UNE SEULE bande active, tout au défaut (1000Hz, 0dB, Q1, Bell, Stereo, pente 24dB/oct)."
+    - "Exporter, puis dupliquer et changer UN SEUL paramètre à la fois (ex: gain seul à +6dB), exporter à chaque fois."
+    - "Diffs deux à deux : le seul index qui change dans le tableau de floats est le paramètre en question."
+    - "Répéter pour : gain (+3/+6/-6dB), Q (1/2/4/8), pente (6/12/24/48dB/oct), mode stéréo (Stereo/Left/Right/Mid/Side), dynamique (ON/OFF + threshold)."
+    - "Script d'aide déjà disponible : tools/inspect_aupreset.py (dump brut) — un script de diff dédié serait à ajouter (tools/diff_aupreset.py) si cette approche est reprise plus tard."
+
+# À compléter de la même manière quand les presets seront disponibles :
+softube_saturn_2:
+  role: saturation
+  au_identifiers:
+    component_type: null   # à relever via tools/inspect_aupreset.py sur un .aupreset réel
+    component_subtype: null
+    component_manufacturer: null
+  state_format:
+    statut: non_renseigné
+
+backbox_hg2:
+  role: saturation
+  au_identifiers:
+    component_type: null
+    component_subtype: null
+    component_manufacturer: null
+  state_format:
+    statut: non_renseigné
+
+waves_j37:
+  role: tape
+  au_identifiers:
+    component_type: null
+    component_subtype: null
+    component_manufacturer: null
+  state_format:
+    statut: non_renseigné
