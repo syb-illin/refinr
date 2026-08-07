@@ -32,7 +32,10 @@ _HTML_TEMPLATE = Template(
   .fail { color: #c0392b; font-weight: 600; }
   .warn { color: #a86500; }
   .steps { list-style: none; padding-left: 0; margin: 0; }
-  .steps li { margin-bottom: 4px; }
+  .steps li { margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px dashed #ddd; }
+  .steps li:last-child { border-bottom: none; }
+  .step-measure { font-size: 0.78rem; color: #444; }
+  .step-bands { font-size: 0.78rem; color: #555; margin: 2px 0 0 0; padding-left: 1rem; }
   code { background: #eee; padding: 1px 4px; border-radius: 3px; }
 </style>
 </head>
@@ -70,7 +73,25 @@ _HTML_TEMPLATE = Template(
         <td>
           <ul class="steps">
           {% for step in o.report.steps %}
-            <li><strong>{{ step.role }}</strong>: {{ step.preset_name }}<br><small>{{ step.reason }}</small></li>
+            <li>
+              <strong>{{ step.role }}</strong>: {{ step.preset_name }}<br>
+              <small>{{ step.reason }}</small>
+              {% if step.extra and step.extra.bands %}
+              <ul class="step-bands">
+              {% for band in step.extra.bands %}
+                <li>{{ band }}</li>
+              {% endfor %}
+              </ul>
+              {% endif %}
+              {% if step.pre_measurement and step.pre_measurement.integrated_lufs is not none %}
+              <div class="step-measure">
+                avant: {{ "%.1f"|format(step.pre_measurement.integrated_lufs) }} LUFS /
+                {{ "%.2f"|format(step.pre_measurement.true_peak_dbtp) }} dBTP
+                → après: {{ "%.1f"|format(step.post_measurement.integrated_lufs) if step.post_measurement.integrated_lufs is not none else "n/a" }} LUFS /
+                {{ "%.2f"|format(step.post_measurement.true_peak_dbtp) if step.post_measurement.true_peak_dbtp is not none else "n/a" }} dBTP
+              </div>
+              {% endif %}
+            </li>
           {% endfor %}
           </ul>
         </td>
