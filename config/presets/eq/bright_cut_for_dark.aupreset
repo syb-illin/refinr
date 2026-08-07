@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>data</key>
+	<data>
+	RmFiRmlsdGVyIFByby1RIDQgcHJlc2V0IGRhdGEgAAECIEVRQmFuZDFGcmVxPTEyMDAu
+	MCBFUUJhbmQxR2Fpbj0tMy41IHJhbmRvbWUgYmluYXJ5Ynl0ZXMAAQIDBAUGBwgJCgsM
+	DQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8wMQ==
+	</data>
+	<key>manufacturer</key>
+	<integer>1180787270</integer>
+	<key>name</key>
+	<string>Test Preset</string>
+	<key>subtype</key>
+	<integer>1181824065</integer>
+	<key>type</key>
+	<integer>1635083896</integer>
+	<key>version</key>
+	<integer>0</integer>
+</dict>
+</plist>

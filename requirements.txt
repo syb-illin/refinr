@@ -1,0 +1,23 @@
+# --- Cross-platform (dev/test peuvent tourner sur n'importe quel OS) ---
+numpy>=1.26
+scipy>=1.11
+soundfile>=0.12
+pyloudnorm>=0.1.1
+PyYAML>=6.0
+jinja2>=3.1          # rendu des rapports HTML
+pytest>=8.0           # utilisé par build_and_package.sh avant chaque build
+
+# --- macOS uniquement (hosting AU réel + GUI) ---
+# A installer seulement sur le Mac cible, dans un venv macOS.
+# pyobjc-core / pyobjc-framework-* nécessitent les Xcode Command Line Tools
+# (xcode-select --install) pour compiler les bridges natifs.
+pyobjc-core>=10.1; sys_platform == "darwin"
+pyobjc-framework-Cocoa>=10.1; sys_platform == "darwin"
+pyobjc-framework-AVFoundation>=10.1; sys_platform == "darwin"
+pyobjc-framework-CoreAudio>=10.1; sys_platform == "darwin"
+pyobjc-framework-AudioToolbox>=10.1; sys_platform == "darwin"
+
+PyQt6>=6.6; sys_platform == "darwin"
+
+# --- Packaging en .app (macOS uniquement) ---
+py2app>=0.28; sys_platform == "darwin"

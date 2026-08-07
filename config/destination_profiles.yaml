@@ -1,0 +1,99 @@
+# Profils de destination : cibles de loudness/true-peak pour l'étape de
+# leveling final de la chaîne. Chiffres à jour (2026), à re-vérifier
+# périodiquement car les plateformes changent leurs specs de temps en temps
+# (sources : Spotify for Artists, YouTube Help, Apple "Mastering for Apple
+# Music", et recoupement avec plusieurs guides de mastering 2026).
+#
+# - target_lufs : loudness intégrée visée pour le master livré
+# - true_peak_ceiling_dbtp : plafond de true peak à ne jamais dépasser
+# - boosts_quiet : si la plateforme remonte le niveau des masters plus
+#   silencieux que sa cible (utile pour décider si on peut se permettre
+#   plus de dynamique) ou si elle se contente seulement d'atténuer les
+#   masters trop forts (auquel cas monter au-delà de la cible ne sert à rien)
+# - notes : contexte / caveats
+
+profiles:
+  distrokid_generic:
+    label: "DistroKid — master générique multi-plateforme"
+    target_lufs: -14.0
+    true_peak_ceiling_dbtp: -1.0
+    boosts_quiet: null  # dépend de la plateforme finale, cf. ci-dessous
+    notes: >
+      DistroKid ne normalise pas lui-même ; c'est un agrégateur qui distribue
+      tel quel vers Spotify/Apple/YouTube/etc. -14 LUFS / -1 dBTP est un
+      compromis sûr et dynamique, sans gain de pression inutile sur les
+      plateformes qui normalisent déjà à -14.
+
+  spotify:
+    label: "Spotify (mode Normal)"
+    target_lufs: -14.0
+    true_peak_ceiling_dbtp: -1.0
+    boosts_quiet: true
+    notes: >
+      Spotify propose Loud (-11), Normal (-14, mode par défaut le plus
+      utilisé), Quiet (-19). Au-delà de -14 LUFS, Spotify atténue ; en
+      dessous, il remonte le niveau (donc pas besoin de brickwall pour
+      "sonner fort" sur Spotify).
+
+  youtube:
+    label: "YouTube / YouTube Music"
+    target_lufs: -14.0
+    true_peak_ceiling_dbtp: -1.0
+    boosts_quiet: false
+    notes: >
+      YouTube normalise vers le bas uniquement : un master à -18 LUFS reste
+      joué à -18 LUFS (pas de remontée). Éviter de livrer trop silencieux
+      pour cette cible si le morceau doit aussi vivre sur YouTube.
+
+  apple_music:
+    label: "Apple Music (Sound Check)"
+    target_lufs: -16.0
+    true_peak_ceiling_dbtp: -1.0
+    boosts_quiet: true
+    notes: >
+      Apple Music est le plus "silencieux" des standards mainstream (-16 LUFS).
+      Sound Check remonte et atténue selon les morceaux.
+
+  amazon_music:
+    label: "Amazon Music"
+    target_lufs: -14.0
+    true_peak_ceiling_dbtp: -2.0
+    boosts_quiet: false
+    notes: "Seule grande plateforme à exiger -2 dBTP plutôt que -1 dBTP."
+
+  tidal:
+    label: "TIDAL"
+    target_lufs: -14.0
+    true_peak_ceiling_dbtp: -1.0
+    boosts_quiet: false
+    notes: "Aligné sur Spotify/YouTube côté cible LUFS."
+
+  deezer:
+    label: "Deezer"
+    target_lufs: -15.0
+    true_peak_ceiling_dbtp: -1.0
+    boosts_quiet: true
+    notes: "Un cran plus silencieux que Spotify/YouTube."
+
+  soundcloud:
+    label: "SoundCloud"
+    target_lufs: -14.0
+    true_peak_ceiling_dbtp: -1.0
+    boosts_quiet: true
+    notes: "Normalisation alignée sur le standard -14 LUFS."
+
+  club_dj_loud:
+    label: "Édit 'loud' club/DJ (pas de normalisation attendue)"
+    target_lufs: -9.0
+    true_peak_ceiling_dbtp: -0.3
+    boosts_quiet: false
+    notes: >
+      Profil volontairement plus écrasé pour contextes sans normalisation
+      (sets DJ, promos). À utiliser en connaissance de cause : sacrifie de
+      la dynamique.
+
+# Cible de gain-staging appliquée AVANT la chaîne de plugins (indépendante
+# du profil de destination, qui ne s'applique qu'à l'étape de leveling final).
+gain_staging:
+  target_lufs: -18.0
+  true_peak_ceiling_dbtp: -1.0

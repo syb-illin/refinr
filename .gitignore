@@ -1,0 +1,11 @@
+.venv/
+build/
+dist/
+releases/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.data.bin
+*.smoketest_out.wav
+.DS_Store
+tests/fixtures/
