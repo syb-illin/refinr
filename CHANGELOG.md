@@ -8,6 +8,10 @@ suivent sont ajoutées automatiquement.
 
 <!-- CHANGELOG_INSERT -->
 
+## [0.2.1] - 2026-08-07 (patch)
+- fix: le stub AU hosting des tests ne traversait pas les workers ProcessPoolExecutor de batch.py (monkeypatch process-local), d'où l'échec CI macOS malgré le fix précédent — remplacé par une variable d'env REFINR_TEST_DISABLE_AU_HOSTING héritée par les process enfants
+
+
 ## [0.2.0] - 2026-08-07 (minor)
 - feat: versioning automatique via hook post-commit (bump major/minor/patch selon convention de commit), changelog auto-généré, badges Build/CI/Version/Coverage synchronisés (shields.io + tag GitHub dynamique), auto-tag + notes de release depuis CHANGELOG.md
 
