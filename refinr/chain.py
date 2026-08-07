@@ -24,6 +24,7 @@ testable de bout en bout.
 from __future__ import annotations
 
 import dataclasses
+import os
 import sys
 import time
 from pathlib import Path
@@ -36,7 +37,13 @@ from .preset_types import ChainStepReport, PluginRole
 from .profiles import DestinationProfile, ProfileCatalog
 from .proq4_control import Band, decide_bands, make_dynamic_preset
 
-AU_HOSTING_AVAILABLE = sys.platform == "darwin"
+# REFINR_TEST_DISABLE_AU_HOSTING=1 court-circuite le hosting AU réel même
+# sur macOS. Nécessaire (pas juste pratique) pour les tests : batch.py
+# parallélise via ProcessPoolExecutor, et un monkeypatch pytest ne
+# traverse PAS la frontière process (chaque worker réimporte au_host à
+# neuf) — une variable d'environnement, elle, est héritée par les process
+# enfants. Positionnée par tests/conftest.py, jamais en usage normal.
+AU_HOSTING_AVAILABLE = sys.platform == "darwin" and os.environ.get("REFINR_TEST_DISABLE_AU_HOSTING") != "1"
 
 
 def _describe_band(b: Band) -> str:
