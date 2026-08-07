@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""
+Hook post-commit : après chaque commit, bump automatiquement
+`refinr.__version__` et ajoute une entrée dans CHANGELOG.md dans un commit
+séparé — pour que la version affichée dans l'app, le badge du README
+(dynamique, lit le dernier tag GitHub) et le nom du zip buildé par CI
+restent TOUJOURS synchronisés sans intervention manuelle. Voir README >
+Versioning automatique.
+
+Pourquoi post-commit et pas commit-msg : les hooks commit-msg/
+prepare-commit-msg peuvent modifier l'index, mais git a déjà figé l'arbre
+du commit en cours à ce stade-là — un `git add` là-dedans ne finit PAS
+dans le commit réellement créé. post-commit, lui, s'exécute une fois le
+commit déjà créé : on peut alors committer le bump proprement, dans un
+commit séparé et clairement identifié.
+
+Convention (façon Conventional Commits), lue sur la 1ère ligne du message
+du commit qui vient d'être fait :
+    "feat!: ..."  ou message contenant "BREAKING CHANGE"  -> MAJOR (X.0.0)
+    "feat: ..." / "feat(scope): ..."                      -> MINOR (0.X.0)
+    tout le reste (fix, chore, docs, refactor, test, ci…)  -> PATCH (0.0.X)
+
+Activation (une fois par clone) : `git config core.hooksPath .githooks`
+
+Pour un commit qui ne doit PAS déclencher de bump : ajouter "[skip
+version]" dans le message, ou modifier toi-même refinr/__init__.py dans ce
+même commit (bump manuel volontaire, déjà détecté et respecté).
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+from datetime import date
+from pathlib import Path
+
+INIT_FILE = Path("refinr/__init__.py")
+CHANGELOG_FILE = Path("CHANGELOG.md")
+MARKER = "<!-- CHANGELOG_INSERT -->"
+VERSION_RE = re.compile(r'__version__ = "(\d+)\.(\d+)\.(\d+)"')
+BUMP_COMMIT_MARKER = "chore: bump version to"
+
+
+def _run(args: list[str]) -> str:
+    return subprocess.run(args, capture_output=True, text=True, check=True).stdout
+
+
+def _last_commit_message() -> str:
+    return _run(["git", "log", "-1", "--pretty=%B"])
+
+
+def _last_commit_touched(path: str) -> bool:
+    # --root : sans ça, git diff-tree ne renvoie RIEN pour un commit racine
+    # (sans parent), ce qui ferait rater la détection d'un bump manuel fait
+    # dans le tout premier commit d'un dépôt.
+    out = _run(["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", "HEAD"])
+    return path in out.splitlines()
+
+
+def _determine_bump(first_line: str, full_message: str) -> str:
+    if re.match(r"^[a-zA-Z]+(\([^)]*\))?!:", first_line) or "breaking change" in full_message.lower():
+        return "major"
+    if re.match(r"^feat(\([^)]*\))?:", first_line, re.IGNORECASE):
+        return "minor"
+    return "patch"
+
+
+def _update_changelog(version: str, bump: str, subject: str) -> None:
+    today = date.today().isoformat()
+    entry = f"## [{version}] - {today} ({bump})\n- {subject}\n"
+
+    if not CHANGELOG_FILE.exists():
+        header = (
+            "# Changelog\n\n"
+            "Historique des versions de Refinr — généré automatiquement par le hook "
+            "`.githooks/post-commit` (une version = un commit, voir README > "
+            "Versioning automatique). Ne pas éditer les entrées passées à la main, "
+            "sauf correction ponctuelle.\n\n"
+            f"{MARKER}\n\n"
+        )
+        CHANGELOG_FILE.write_text(header + entry + "\n", encoding="utf-8")
+    else:
+        content = CHANGELOG_FILE.read_text(encoding="utf-8")
+        if MARKER not in content:
+            content = content.rstrip() + f"\n\n{MARKER}\n\n"
+        content = content.replace(MARKER, f"{MARKER}\n\n{entry}", 1)
+        CHANGELOG_FILE.write_text(content, encoding="utf-8")
+
+
+def main() -> int:
+    if not INIT_FILE.exists():
+        return 0
+
+    message = _last_commit_message()
+    lines = message.splitlines()
+    first_line = lines[0] if lines else ""
+
+    if not first_line.strip():
+        return 0
+    if "[skip version]" in message.lower():
+        return 0
+    if first_line.startswith(BUMP_COMMIT_MARKER):
+        return 0  # ne pas bumper le commit de bump lui-même (boucle infinie sinon)
+    if _last_commit_touched(str(INIT_FILE)):
+        return 0  # bump manuel déjà fait dans ce commit (release explicite)
+
+    content = INIT_FILE.read_text(encoding="utf-8")
+    match = VERSION_RE.search(content)
+    if not match:
+        print(f"[post-commit] __version__ introuvable dans {INIT_FILE}, bump ignoré.", file=sys.stderr)
+        return 0
+
+    major, minor, patch = (int(x) for x in match.groups())
+    bump = _determine_bump(first_line, message)
+    if bump == "major":
+        major, minor, patch = major + 1, 0, 0
+    elif bump == "minor":
+        minor, patch = minor + 1, 0
+    else:
+        patch += 1
+
+    old_version = ".".join(match.groups())
+    new_version = f"{major}.{minor}.{patch}"
+    new_content = content[: match.start()] + f'__version__ = "{new_version}"' + content[match.end() :]
+    INIT_FILE.write_text(new_content, encoding="utf-8")
+
+    _update_changelog(new_version, bump, first_line)
+
+    subprocess.run(["git", "add", str(INIT_FILE), str(CHANGELOG_FILE)], check=True)
+    subprocess.run(
+        [
+            "git",
+            "commit",
+            "--no-verify",
+            "-m",
+            f"{BUMP_COMMIT_MARKER} {new_version} ({bump}) [skip version]",
+        ],
+        check=True,
+    )
+
+    print(f"[post-commit] version bump automatique ({bump}): {old_version} -> {new_version}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

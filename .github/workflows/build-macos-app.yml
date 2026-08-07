@@ -61,9 +61,13 @@ jobs:
           path: Refinr_v${{ steps.version.outputs.version }}.zip
           retention-days: 90
 
+      - name: Générer les notes de release depuis CHANGELOG.md
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: python3 tools/extract_changelog_section.py "${{ steps.version.outputs.version }}" > release_notes.md
+
       - name: Créer une GitHub Release (uniquement si déclenché par un tag)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
           files: Refinr_v${{ steps.version.outputs.version }}.zip
-          generate_release_notes: true
+          body_path: release_notes.md

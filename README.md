@@ -6,13 +6,14 @@
 
 Gain staging → EQ → Saturation → Tape → Leveling par profil de destination, spécifique à chaque fichier, jamais générique.
 
-[![Build](https://github.com/syb-illin/refinr/actions/workflows/build-macos-app.yml/badge.svg)](https://github.com/syb-illin/refinr/actions/workflows/build-macos-app.yml)
+[![Build](https://img.shields.io/github/actions/workflow/status/syb-illin/refinr/build-macos-app.yml?label=build)](https://github.com/syb-illin/refinr/actions/workflows/build-macos-app.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/syb-illin/refinr/ci.yml?label=lint%20%2F%20tests&branch=main)](https://github.com/syb-illin/refinr/actions/workflows/ci.yml)
 ![Coverage](docs/badges/coverage.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Apple%20Silicon-black?logo=apple&logoColor=white)
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![GUI](https://img.shields.io/badge/GUI-PyQt6-41CD52?logo=qt&logoColor=white)
 ![Bridge](https://img.shields.io/badge/audio%20engine-ctypes%20%2F%20AudioToolbox-0A84FF)
-![Version](https://img.shields.io/badge/version-0.1.8-orange)
+[![Version](https://img.shields.io/github/v/tag/syb-illin/refinr?label=version&color=orange&sort=semver)](https://github.com/syb-illin/refinr/releases)
 ![Status](https://img.shields.io/badge/status-en%20d%C3%A9veloppement-yellow)
 
 **Repo :** [github.com/syb-illin/refinr](https://github.com/syb-illin/refinr)
@@ -32,6 +33,7 @@ Gain staging → EQ → Saturation → Tape → Leveling par profil de destinati
 - [Peupler la bibliothèque de presets](#étape-2--peupler-la-bibliothèque-de-presets)
 - [Traiter des fichiers](#étape-3--traiter-des-fichiers)
 - [Profils de destination](#profils-de-destination)
+- [Versioning automatique](#versioning-automatique)
 - [Tests](#tests)
 - [Structure du projet](#structure-du-projet)
 
@@ -124,10 +126,10 @@ cd refinr
 ./build_and_package.sh
 ```
 
-→ produit `releases/Refinr_v0.1.1_<date-heure>.zip`. Relance ce même
-script à chaque fois que le code change (nouvelle version dans
-`refinr/__init__.py` → nom de zip différent, historique conservé dans
-`releases/`).
+→ produit `releases/Refinr_v{version}_<date-heure>.zip`, `{version}` étant
+`refinr.__version__` (bumpée automatiquement, voir
+[Versioning automatique](#versioning-automatique)). Relance ce même script
+à chaque fois que le code change ; historique conservé dans `releases/`.
 
 > Ceci ne dispense pas de valider le hosting AU (étape ci-dessous) : le
 > build automatique ne peut pas remplacer un test réel de tes plugins,
@@ -149,21 +151,22 @@ Repo déjà créé : **https://github.com/syb-illin/refinr**
 
 <br>
 
-`main` et le tag `v0.1.0` sont déjà poussés. Pour les builds suivants :
-change `__version__` dans `refinr/__init__.py`, commit, tag
-(`git tag v0.1.1 && git push --tags`) — nouvelle Release automatique. Le
-bouton **"Run workflow"** (onglet Actions) permet aussi un build ponctuel
-sans tag (artifact téléchargeable 90 jours, pas de Release).
+Le versioning et le tagging sont entièrement automatiques (voir
+[Versioning automatique](#versioning-automatique) plus bas) : chaque commit
+sur `main` bump `refinr/__version__` via le hook `.githooks/post-commit`,
+et `ci.yml` crée le tag `vX.Y.Z` correspondant s'il n'existe pas encore —
+ce tag déclenche ce workflow, qui build, zippe et publie la Release. Rien à
+taguer à la main. Le bouton **"Run workflow"** (onglet Actions) permet
+aussi un build ponctuel sans tag (artifact téléchargeable 90 jours, pas de
+Release).
 
 Je n'ai ni `gh` (pas installable : le réseau de mon environnement
 d'exécution bloque le téléchargement du binaire) ni `api.github.com`
-accessible pour suivre l'avancement d'un build — seul `git push`/`git tag`
-en HTTPS avec un token passe par le proxy autorisé. Si tu me donnes un
-Personal Access Token (scope `repo` + `workflow`, idéalement limité à ce
-seul repo, collé dans le chat), je peux pousser et taguer à ta place ;
-pour suivre le résultat du build (logs, statut), c'est à vérifier de ton
-côté sur https://github.com/syb-illin/refinr/actions — je ne peux pas le
-lire moi-même.
+accessible pour suivre l'avancement d'un build — seul `git push` en HTTPS
+avec un token passe par le proxy autorisé. Pour suivre le résultat d'un
+build (logs, statut), c'est à vérifier de ton côté sur
+https://github.com/syb-illin/refinr/actions — je ne peux pas le lire
+moi-même.
 
 </details>
 
@@ -278,6 +281,39 @@ Définis dans `config/destination_profiles.yaml` :
 
 Chiffres à jour à l'écriture de ce projet (2026) — à re-vérifier
 périodiquement, les plateformes changent leurs specs de temps en temps.
+
+---
+
+## Versioning automatique
+
+La version (`refinr.__version__`) est la **source unique** : c'est elle qui
+est affichée dans l'app, qui détermine le nom du zip buildé par CI, et le
+badge du README (dynamique, lit le dernier tag GitHub — jamais à mettre à
+jour à la main).
+
+Un hook git (`post-commit`) bump automatiquement `refinr/__init__.py` à
+chaque commit, façon [Conventional Commits](https://www.conventionalcommits.org/) :
+
+| Message de commit                          | Bump  |
+|---------------------------------------------|-------|
+| `feat!: ...` ou contient `BREAKING CHANGE`  | major |
+| `feat: ...` / `feat(scope): ...`            | minor |
+| tout le reste (`fix:`, `chore:`, `docs:`…)  | patch |
+
+Activation (une fois par clone) :
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Ensuite chaque `git commit` inclut automatiquement le bump. La CI (`ci.yml`)
+crée le tag `vX.Y.Z` correspondant à chaque push sur `main` s'il n'existe
+pas encore, ce qui déclenche `build-macos-app.yml` (build + release avec le
+zip nommé `Refinr_v{version}.zip`) — donc app, badge et zip restent
+toujours synchronisés sans intervention manuelle.
+
+Pour un commit qui ne doit pas déclencher de bump, ajoute `[skip version]`
+dans le message.
 
 ---
 

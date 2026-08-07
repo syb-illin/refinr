@@ -2,10 +2,14 @@ name: CI
 
 # Lint + tests + couverture sur chaque push/PR sur main. Tourne sur un
 # runner Linux (rapide/gratuit) : la suite de tests est volontairement
-# indépendante de PyObjC/macOS (voir README > Tests). Le badge de
-# couverture est régénéré et commité automatiquement uniquement sur push
-# direct vers main (pas sur les PR, pour éviter les commits sur des
-# branches externes).
+# indépendante de PyObjC/macOS (voir README > Tests). Sur un push direct
+# vers main uniquement (pas sur les PR) : le badge de couverture est
+# régénéré/commité, PUIS un tag "vX.Y.Z" est créé automatiquement à partir
+# de refinr.__version__ (bumpée par le hook .githooks/commit-msg) s'il
+# n'existe pas déjà — ce tag déclenche build-macos-app.yml, qui build,
+# zippe et crée la GitHub Release. Ainsi version affichée dans l'app,
+# badge de version (dynamique, lit le tag), zip et Release restent
+# synchronisés sans étape manuelle.
 on:
   push:
     branches: [main]
@@ -21,6 +25,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v6
         with:
@@ -51,6 +57,22 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add docs/badges/coverage.svg
-            git commit -m "chore: mise à jour du badge de couverture [skip ci]"
+            git commit -m "chore: mise à jour du badge de couverture [skip ci] [skip version]"
             git push
+          fi
+
+      - name: Auto-tag la release depuis refinr.__version__ (push direct sur main uniquement)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          VERSION=$(python3 -c "from refinr import __version__; print(__version__)")
+          TAG="v$VERSION"
+          git fetch --tags origin
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG existe déjà, rien à faire."
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+            echo "Tag $TAG créé et poussé -> déclenche build-macos-app.yml (build + GitHub Release)."
           fi
