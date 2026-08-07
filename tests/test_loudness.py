@@ -12,9 +12,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from refinr.loudness import gain_to_target_lufs, limit_true_peak, measure
-from tests.generate_test_audio import make_calm_dynamic, make_hot_clipped_source, SR
 from refinr.audio_io import AudioBuffer
+from refinr.loudness import gain_to_target_lufs, limit_true_peak, measure
+from tests.generate_test_audio import SR, make_calm_dynamic, make_hot_clipped_source
 
 
 def _buffer_from(samples):

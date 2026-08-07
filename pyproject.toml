@@ -1,0 +1,32 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "C4", "SIM"]
+ignore = ["E501"]  # ligne trop longue : géré par black, pas la peine de doublonner
+
+[tool.ruff.lint.isort]
+known-first-party = ["refinr", "gui", "tools"]
+
+[tool.black]
+line-length = 120
+target-version = ["py311"]
+
+[tool.coverage.run]
+source = ["refinr"]
+branch = true
+# Exclus explicitement, PAS par confort mais parce que réellement
+# impossible à exercer en CI headless :
+#   - au_host.py : ctypes direct sur AudioToolbox.framework, nécessite un
+#     vrai composant AU installé (Pro-Q4/Saturn2/HG2/J37) sur la machine.
+#     Le code Python lui-même n'est testable qu'en l'exécutant réellement
+#     sur macOS avec les plugins présents (voir tools/*_smoketest.py).
+omit = ["*/refinr/au_host.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

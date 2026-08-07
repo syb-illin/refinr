@@ -32,8 +32,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from refinr.audio_io import load_wav, save_wav  # noqa: E402
 from refinr.au_host import process_chain_offline  # noqa: E402
+from refinr.audio_io import load_wav, save_wav  # noqa: E402
 from refinr.preset_types import PluginPreset  # noqa: E402
 
 

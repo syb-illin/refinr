@@ -9,11 +9,10 @@ progression via des signaux.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from PyQt6.QtCore import QThread, pyqtSignal
-
-import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -22,8 +21,8 @@ from refinr.report import write_reports  # noqa: E402
 
 
 class BatchWorker(QThread):
-    file_done = pyqtSignal(str, bool, str)   # input_path, success, message court
-    finished_ok = pyqtSignal(object, dict)   # BatchResult, chemins des rapports
+    file_done = pyqtSignal(str, bool, str)  # input_path, success, message court
+    finished_ok = pyqtSignal(object, dict)  # BatchResult, chemins des rapports
     failed = pyqtSignal(str)
 
     def __init__(
@@ -45,6 +44,7 @@ class BatchWorker(QThread):
 
     def run(self) -> None:
         try:
+
             def _on_progress(outcome):
                 if outcome.success:
                     lufs = outcome.report.final_measurement.get("integrated_lufs")

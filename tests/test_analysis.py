@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from refinr.analysis import analyze
 from refinr.audio_io import AudioBuffer
-from tests.generate_test_audio import make_bright, make_dark, make_hot_clipped_source, SR
+from tests.generate_test_audio import SR, make_bright, make_dark, make_hot_clipped_source
 
 
 def _buffer_from(samples):

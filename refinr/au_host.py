@@ -320,7 +320,9 @@ class _LoadedAU:
 
 def _instantiate_au(preset: PluginPreset, sample_rate: float) -> _LoadedAU:
     desc = AudioComponentDescription(
-        componentType=four_char_code(preset.component_type) if len(preset.component_type) == 4 else kAudioUnitType_Effect,
+        componentType=(
+            four_char_code(preset.component_type) if len(preset.component_type) == 4 else kAudioUnitType_Effect
+        ),
         componentSubType=four_char_code(preset.component_subtype),
         componentManufacturer=four_char_code(preset.component_manufacturer),
         componentFlags=0,
@@ -397,7 +399,9 @@ def _dispose_au(au: _LoadedAU) -> None:
     AudioToolbox.AudioComponentInstanceDispose(au.instance)
 
 
-def _process_single_au(preset: PluginPreset, left: np.ndarray, right: np.ndarray, sample_rate: float) -> tuple[np.ndarray, np.ndarray]:
+def _process_single_au(
+    preset: PluginPreset, left: np.ndarray, right: np.ndarray, sample_rate: float
+) -> tuple[np.ndarray, np.ndarray]:
     """Fait passer un buffer stéréo (2 tableaux mono float32) à travers un seul AU."""
     tail_frames = int(TAIL_SECONDS * sample_rate)
     feeder = _SourceFeeder(left, right, tail_frames)
@@ -469,7 +473,9 @@ class RenderResult:
     frames_rendered: int
 
 
-def process_chain_offline(buffer: AudioBuffer, presets_in_order: list[PluginPreset]) -> tuple[AudioBuffer, RenderResult]:
+def process_chain_offline(
+    buffer: AudioBuffer, presets_in_order: list[PluginPreset]
+) -> tuple[AudioBuffer, RenderResult]:
     """
     Fait passer `buffer` (déjà gain-stagé) à travers la chaîne d'Audio Units
     donnée, dans l'ordre, chacun en pull via AURenderCallback (offline,

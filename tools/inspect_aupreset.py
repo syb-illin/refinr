@@ -94,7 +94,7 @@ def inspect_file(path: Path, dump_blob: bool) -> None:
             else:
                 print(f"  {key:14s}: {value!r}")
 
-    other_keys = [k for k in plist.keys() if k not in ("name", "manufacturer", "type", "subtype", "version", "data")]
+    other_keys = [k for k in plist if k not in ("name", "manufacturer", "type", "subtype", "version", "data")]
     if other_keys:
         print(f"  autres clés top-level: {other_keys}")
         for k in other_keys:
@@ -106,8 +106,10 @@ def inspect_file(path: Path, dump_blob: bool) -> None:
 
     data = plist.get("data")
     if data is None:
-        print("  [i] Pas de clé 'data' — ce plugin expose peut-être ses paramètres "
-              "directement comme clés du plist (cas favorable pour un mapping fin).")
+        print(
+            "  [i] Pas de clé 'data' — ce plugin expose peut-être ses paramètres "
+            "directement comme clés du plist (cas favorable pour un mapping fin)."
+        )
         return
 
     data = bytes(data)
@@ -115,16 +117,20 @@ def inspect_file(path: Path, dump_blob: bool) -> None:
 
     strings = extract_printable_strings(data)
     if strings:
-        print(f"  [i] {len(strings)} chaîne(s) ASCII imprimable(s) détectée(s) dans le blob "
-              f"(souvent des noms de paramètres ou de presets internes) :")
+        print(
+            f"  [i] {len(strings)} chaîne(s) ASCII imprimable(s) détectée(s) dans le blob "
+            f"(souvent des noms de paramètres ou de presets internes) :"
+        )
         for s in strings[:40]:
             print(f"      - {s!r}")
         if len(strings) > 40:
             print(f"      ... ({len(strings) - 40} de plus, tronqué)")
     else:
-        print("  [i] Aucune chaîne lisible trouvée : state très probablement entièrement "
-              "binaire/compressé (courant chez Waves). Le mapping par diff binaire "
-              "(--dump-blob sur deux presets quasi identiques) sera la seule approche fiable.")
+        print(
+            "  [i] Aucune chaîne lisible trouvée : state très probablement entièrement "
+            "binaire/compressé (courant chez Waves). Le mapping par diff binaire "
+            "(--dump-blob sur deux presets quasi identiques) sera la seule approche fiable."
+        )
 
     if dump_blob:
         out_path = path.with_suffix(path.suffix + ".data.bin")

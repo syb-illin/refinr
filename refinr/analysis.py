@@ -23,8 +23,7 @@ import numpy as np
 from scipy.signal import welch
 
 from .audio_io import AudioBuffer
-from .loudness import measure, LoudnessMeasurement
-
+from .loudness import LoudnessMeasurement, measure
 
 # Bandes de fréquence utilisées pour la balance spectrale (Hz).
 BANDS_HZ = {
@@ -47,10 +46,10 @@ class SpectralProfile:
 
 @dataclasses.dataclass
 class DynamicsProfile:
-    crest_factor_db: float          # peak - RMS, indicateur de compression déjà présente
-    clipping_ratio: float           # fraction d'échantillons proches de 0 dBFS (proxy d'écrêtage source)
+    crest_factor_db: float  # peak - RMS, indicateur de compression déjà présente
+    clipping_ratio: float  # fraction d'échantillons proches de 0 dBFS (proxy d'écrêtage source)
     loudness_range_lu: float | None
-    stereo_correlation: float       # -1..1, 1 = mono parfait, <0 = phase problématique
+    stereo_correlation: float  # -1..1, 1 = mono parfait, <0 = phase problématique
 
 
 @dataclasses.dataclass
@@ -136,10 +135,7 @@ def _dynamics_profile(buffer: AudioBuffer, loudness: LoudnessMeasurement) -> Dyn
 
     stereo = buffer.as_stereo()
     left, right = stereo[:, 0], stereo[:, 1]
-    if np.std(left) > 1e-9 and np.std(right) > 1e-9:
-        corr = float(np.corrcoef(left, right)[0, 1])
-    else:
-        corr = 1.0
+    corr = float(np.corrcoef(left, right)[0, 1]) if np.std(left) > 1e-9 and np.std(right) > 1e-9 else 1.0
 
     return DynamicsProfile(
         crest_factor_db=crest_factor_db,

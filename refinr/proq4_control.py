@@ -58,8 +58,29 @@ N_BANDS = 24
 # Pro-Q4). On part de ce template pour chaque bande, actives ou non — seuls
 # les champs confirmés sont modifiés pour les bandes actives.
 _DISABLED_BAND_TEMPLATE = (
-    0.0, 1.0, 9.966, 0.0, 0.5, 0.0, 2.0, 2.0, 1.0, 0.0, 1.0, 1.0,
-    0.667, 50.0, 50.0, 0.0, 0.0, 3.322, 14.288, 0.0, 0.0, 50.0, 0.0,
+    0.0,
+    1.0,
+    9.966,
+    0.0,
+    0.5,
+    0.0,
+    2.0,
+    2.0,
+    1.0,
+    0.0,
+    1.0,
+    1.0,
+    0.667,
+    50.0,
+    50.0,
+    0.0,
+    0.0,
+    3.322,
+    14.288,
+    0.0,
+    0.0,
+    50.0,
+    0.0,
 )
 
 # Valeurs magiques observées systématiquement aux offsets 17/18 sur TOUTE
@@ -75,10 +96,54 @@ _ACTIVE_MAGIC_18 = 11.551
 # reste est copié tel quel (voir plugin_properties_mapping.yaml, section
 # global_params).
 _GLOBAL_TAIL_TEMPLATE = (
-    0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, -1.0,
-    2.0, 3.0, 2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0,
+    1.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    1.0,
+    -1.0,
+    2.0,
+    3.0,
+    2.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    2.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
 )
 
 # Métadonnées cosmétiques (nom/auteur/description/tags) qui suivent les 600
@@ -94,7 +159,9 @@ _METADATA_TAIL = bytes.fromhex(
     "7a65207468652044656661756c742053657474696e67207072657365742061732"
     "0796f75206c696b652c20616e642073617665206974207669612074686520707"
     "26573657420"
-).replace(b" ", b"")  # sûreté si un espace traîne
+).replace(
+    b" ", b""
+)  # sûreté si un espace traîne
 
 
 def _q_to_raw(q: float) -> float:
@@ -113,11 +180,12 @@ class Band:
     freq_hz: float
     gain_db: float = 0.0
     q: float = 1.0
-    shape: str = "bell"                 # clé de SHAPE_ENUM
-    stereo: str = "stereo"              # clé de STEREO_ENUM
-    slope_db_per_oct: float | None = None   # seulement pertinent pour high_pass/low_pass
-    dynamic_range_db: float = 0.0       # 0.0 = pas de dynamique sur cette bande
+    shape: str = "bell"  # clé de SHAPE_ENUM
+    stereo: str = "stereo"  # clé de STEREO_ENUM
+    slope_db_per_oct: float | None = None  # seulement pertinent pour high_pass/low_pass
+    dynamic_range_db: float = 0.0  # 0.0 = pas de dynamique sur cette bande
     dynamic_auto_threshold: bool = False
+    reason: str = ""  # pourquoi cette bande a été décidée (valeurs mesurées à l'appui)
 
     def to_floats(self) -> tuple[float, ...]:
         block = list(_DISABLED_BAND_TEMPLATE)
@@ -211,25 +279,91 @@ def decide_bands(analysis: FileAnalysis) -> list[Band]:
     """
     bands: list[Band] = []
 
-    bands.append(Band(freq_hz=30.0, shape="high_pass", slope_db_per_oct=12.0, stereo="stereo"))
+    bands.append(
+        Band(
+            freq_hz=30.0,
+            shape="high_pass",
+            slope_db_per_oct=12.0,
+            stereo="stereo",
+            reason="Sécurité systématique : retire le sub-sonique (<30Hz, inaudible, jamais utile "
+            "musicalement) pour ne pas gaspiller de headroom ni perturber le limiteur final.",
+        )
+    )
 
     tilt = analysis.spectral.tilt_db_per_octave
     if tilt > 1.0 or tilt < -2.5:
         shelf_gain = max(-4.0, min(4.0, -tilt * 1.2))
-        bands.append(Band(freq_hz=6000.0, gain_db=round(shelf_gain, 2), shape="high_shelf", stereo="stereo"))
-
-    if analysis.dynamics.clipping_ratio > 0.001:
+        direction = "trop brillante" if tilt > 1.0 else "trop sombre"
         bands.append(
             Band(
-                freq_hz=3000.0, gain_db=0.0, q=1.5, shape="bell", stereo="stereo",
-                dynamic_range_db=-2.0, dynamic_auto_threshold=True,
+                freq_hz=6000.0,
+                gain_db=round(shelf_gain, 2),
+                shape="high_shelf",
+                stereo="stereo",
+                reason=(
+                    f"Pente spectrale mesurée à {tilt:+.2f} dB/octave (seuils déclencheurs : "
+                    f">+1.0 ou <-2.5) — source jugée {direction}. Correction : High Shelf 6kHz "
+                    f"{shelf_gain:+.2f}dB (proportionnel au tilt mesuré, borné à ±4dB pour rester subtil "
+                    f"et ne pas surcorriger)."
+                ),
             )
         )
 
-    if analysis.dynamics.crest_factor_db < 8:
-        bands.append(Band(freq_hz=300.0, gain_db=-1.5, q=1.2, shape="bell", stereo="stereo"))
+    clip_ratio = analysis.dynamics.clipping_ratio
+    if clip_ratio > 0.001:
+        bands.append(
+            Band(
+                freq_hz=3000.0,
+                gain_db=0.0,
+                q=1.5,
+                shape="bell",
+                stereo="stereo",
+                dynamic_range_db=-2.0,
+                dynamic_auto_threshold=True,
+                reason=(
+                    f"Écrêtage détecté sur {clip_ratio*100:.2f}% des échantillons (seuil >0.1%, proxy: "
+                    f"échantillons à moins de 0.3dB de 0dBFS). La dureté/agressivité typique de ce type "
+                    f"de source se concentre autour de 3kHz (zone de présence, où l'oreille est la plus "
+                    f"sensible). Correction : dynamique légère (-2dB, seuil auto) plutôt qu'un cut statique, "
+                    f"pour ne réagir que sur les passages réellement durs, sans assourdir le reste."
+                ),
+            )
+        )
 
-    if analysis.dynamics.stereo_correlation < 0.2:
-        bands.append(Band(freq_hz=150.0, shape="high_pass", slope_db_per_oct=12.0, stereo="side"))
+    crest = analysis.dynamics.crest_factor_db
+    if crest < 8:
+        bands.append(
+            Band(
+                freq_hz=300.0,
+                gain_db=-1.5,
+                q=1.2,
+                shape="bell",
+                stereo="stereo",
+                reason=(
+                    f"Crest factor mesuré à {crest:.1f}dB (seuil <8dB = déjà bien/trop compressé). "
+                    f"Le matériel très compressé accumule typiquement de l'énergie autour de 300Hz "
+                    f"(boxiness/mud dû à la compression qui égalise les dynamiques et laisse ressortir "
+                    f"le bas-médium). Correction : léger creux Bell -1.5dB pour désencombrer."
+                ),
+            )
+        )
+
+    corr = analysis.dynamics.stereo_correlation
+    if corr < 0.2:
+        bands.append(
+            Band(
+                freq_hz=150.0,
+                shape="high_pass",
+                slope_db_per_oct=12.0,
+                stereo="side",
+                reason=(
+                    f"Corrélation stéréo mesurée à {corr:.2f} (seuil <0.2 = stéréo très large, canaux "
+                    f"quasi indépendants). Risque d'incompatibilité mono et de flou dans le bas du spectre "
+                    f"si les basses fréquences sont présentes dans le canal Side. Correction : High Pass "
+                    f"150Hz appliqué UNIQUEMENT au canal Side (le Mid n'est pas touché), pour garder les "
+                    f"basses fréquences compatibles mono sans réduire la largeur stéréo perçue en aigu."
+                ),
+            )
+        )
 
     return bands

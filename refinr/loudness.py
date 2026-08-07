@@ -189,10 +189,7 @@ def limit_true_peak(
     smoothed = np.empty_like(gain_env)
     current = 1.0
     for i, g in enumerate(gain_env):
-        if g < current:
-            current = g
-        else:
-            current = release_coeff * current + (1 - release_coeff) * g
+        current = g if g < current else release_coeff * current + (1 - release_coeff) * g
         smoothed[i] = current
 
     # Retour à la fréquence d'échantillonnage d'origine.
@@ -203,9 +200,6 @@ def limit_true_peak(
 
     limited = stereo * gain_at_original_rate[:, None]
 
-    if buffer.samples.ndim == 1:
-        out_samples = limited[:, 0].astype(np.float32)
-    else:
-        out_samples = limited.astype(np.float32)
+    out_samples = limited[:, 0].astype(np.float32) if buffer.samples.ndim == 1 else limited.astype(np.float32)
 
     return AudioBuffer(samples=out_samples, sample_rate=buffer.sample_rate, source_path=buffer.source_path)

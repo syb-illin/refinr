@@ -24,8 +24,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from refinr.audio_io import load_wav, save_wav  # noqa: E402
 from refinr.au_host import process_chain_offline  # noqa: E402
+from refinr.audio_io import load_wav, save_wav  # noqa: E402
 from refinr.preset_types import load_aupreset  # noqa: E402
 
 
@@ -44,8 +44,10 @@ def main() -> None:
 
     print(f"[2/4] Chargement du preset Pro-Q4 : {preset_path}")
     preset = load_aupreset(preset_path)
-    print(f"  nom='{preset.name}' type={preset.component_type} subtype={preset.component_subtype} "
-          f"manufacturer={preset.component_manufacturer}")
+    print(
+        f"  nom='{preset.name}' type={preset.component_type} subtype={preset.component_subtype} "
+        f"manufacturer={preset.component_manufacturer}"
+    )
 
     print("[3/4] Rendu offline via AudioUnitRender (recherche + instanciation + ClassInfo + rendu)...")
     out_buffer, result = process_chain_offline(buffer, [preset])
@@ -54,8 +56,7 @@ def main() -> None:
     save_wav(out_buffer, output_path)
     print(f"[4/4] OK — écrit : {output_path}")
     print()
-    print("Écoute la sortie pour vérifier que le traitement EQ a bien été appliqué "
-          "(comparé au fichier source).")
+    print("Écoute la sortie pour vérifier que le traitement EQ a bien été appliqué " "(comparé au fichier source).")
 
 
 if __name__ == "__main__":

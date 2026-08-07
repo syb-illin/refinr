@@ -78,8 +78,9 @@ def resample_if_needed(buffer: AudioBuffer, target_rate: int) -> AudioBuffer:
     """Resample simple par interpolation polyphase (scipy) si nécessaire."""
     if buffer.sample_rate == target_rate:
         return buffer
-    from scipy.signal import resample_poly
     from math import gcd
+
+    from scipy.signal import resample_poly
 
     g = gcd(buffer.sample_rate, target_rate)
     up = target_rate // g

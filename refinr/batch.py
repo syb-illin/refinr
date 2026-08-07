@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .chain import FileProcessingReport, process_file
 from .preset_mapping import PresetLibrary
-from .profiles import DestinationProfile, ProfileCatalog
+from .profiles import ProfileCatalog
 
 
 @dataclasses.dataclass

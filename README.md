@@ -7,11 +7,12 @@
 Gain staging → EQ → Saturation → Tape → Leveling par profil de destination, spécifique à chaque fichier, jamais générique.
 
 [![Build](https://github.com/syb-illin/refinr/actions/workflows/build-macos-app.yml/badge.svg)](https://github.com/syb-illin/refinr/actions/workflows/build-macos-app.yml)
+![Coverage](docs/badges/coverage.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Apple%20Silicon-black?logo=apple&logoColor=white)
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![GUI](https://img.shields.io/badge/GUI-PyQt6-41CD52?logo=qt&logoColor=white)
 ![Bridge](https://img.shields.io/badge/audio%20engine-ctypes%20%2F%20AudioToolbox-0A84FF)
-![Version](https://img.shields.io/badge/version-0.1.1-orange)
+![Version](https://img.shields.io/badge/version-0.1.7-orange)
 ![Status](https://img.shields.io/badge/status-en%20d%C3%A9veloppement-yellow)
 
 **Repo :** [github.com/syb-illin/refinr](https://github.com/syb-illin/refinr)
@@ -288,6 +289,16 @@ python3 -m pytest tests/ -v
 Couvre tout sauf `au_host.py` et le GUI (macOS requis — voir tableau plus
 haut). Les fixtures audio de test sont générées automatiquement au premier
 lancement, via `tests/conftest.py`.
+
+Pour mesurer la couverture (badge ci-dessus généré ainsi, `au_host.py` exclu
+volontairement car il pilote de vrais plugins AU macOS et n'est pas
+testable en CI headless) :
+
+```bash
+pip install pytest-cov coverage-badge
+python3 -m pytest tests/ --cov=refinr --cov-branch --cov-report=term-missing
+coverage-badge -o docs/badges/coverage.svg -f
+```
 
 ---
 

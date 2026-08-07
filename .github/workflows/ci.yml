@@ -1,0 +1,56 @@
+name: CI
+
+# Lint + tests + couverture sur chaque push/PR sur main. Tourne sur un
+# runner Linux (rapide/gratuit) : la suite de tests est volontairement
+# indépendante de PyObjC/macOS (voir README > Tests). Le badge de
+# couverture est régénéré et commité automatiquement uniquement sur push
+# direct vers main (pas sur les PR, pour éviter les commits sur des
+# branches externes).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Installer les dépendances
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff black pytest-cov coverage-badge
+
+      - name: Lint (Ruff)
+        run: ruff check .
+
+      - name: Format check (Black)
+        run: black --check .
+
+      - name: Tests + couverture
+        run: python3 -m pytest tests/ --cov=refinr --cov-branch --cov-report=term-missing
+
+      - name: Générer le badge de couverture
+        run: coverage-badge -o docs/badges/coverage.svg -f
+
+      - name: Commiter le badge si modifié (push direct sur main uniquement)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          if ! git diff --quiet -- docs/badges/coverage.svg; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add docs/badges/coverage.svg
+            git commit -m "chore: mise à jour du badge de couverture [skip ci]"
+            git push
+          fi

@@ -14,8 +14,7 @@ from jinja2 import Template
 
 from .batch import BatchResult
 
-_HTML_TEMPLATE = Template(
-    """
+_HTML_TEMPLATE = Template("""
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -35,7 +34,14 @@ _HTML_TEMPLATE = Template(
   .steps li { margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px dashed #ddd; }
   .steps li:last-child { border-bottom: none; }
   .step-measure { font-size: 0.78rem; color: #444; }
-  .step-bands { font-size: 0.78rem; color: #555; margin: 2px 0 0 0; padding-left: 1rem; }
+  .step-bands { list-style: none; font-size: 0.78rem; color: #555; margin: 4px 0 0 0; padding: 0; }
+  .step-bands li { border: none; padding: 4px 0 4px 8px; margin: 0; border-left: 2px solid #ccc; }
+  .band-summary { font-weight: 600; color: #333; }
+  .band-reason { display: block; color: #666; margin-top: 1px; }
+  details.diag { margin-bottom: 6px; }
+  details.diag summary { cursor: pointer; font-size: 0.8rem; color: #333; }
+  .diag-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 2px 12px; font-size: 0.76rem; color: #444; margin-top: 4px; }
+  .diag-grid div { padding: 1px 0; }
   code { background: #eee; padding: 1px 4px; border-radius: 3px; }
 </style>
 </head>
@@ -65,7 +71,23 @@ _HTML_TEMPLATE = Template(
         <td>{{ o.input_path }}</td>
         {% if o.success %}
         <td class="ok">OK</td>
-        <td>{{ o.report.analysis_tags | join(', ') }}</td>
+        <td>
+          <div><strong>{{ o.report.analysis_tags | join(', ') }}</strong></div>
+          <details class="diag">
+            <summary>Diagnostic complet</summary>
+            <div class="diag-grid">
+              <div>Centroïde spectral</div><div>{{ "%.0f"|format(o.report.diagnostic.spectral.spectral_centroid_hz) }} Hz</div>
+              <div>Pente spectrale (tilt)</div><div>{{ "%+.2f"|format(o.report.diagnostic.spectral.tilt_db_per_octave) }} dB/oct</div>
+              <div>Crest factor</div><div>{{ "%.1f"|format(o.report.diagnostic.dynamics.crest_factor_db) }} dB</div>
+              <div>Écrêtage source</div><div>{{ "%.3f"|format(o.report.diagnostic.dynamics.clipping_ratio_pct) }} %</div>
+              <div>Corrélation stéréo</div><div>{{ "%.2f"|format(o.report.diagnostic.dynamics.stereo_correlation) }}</div>
+              <div>Loudness range</div><div>{{ "%.2f"|format(o.report.diagnostic.dynamics.loudness_range_lu) if o.report.diagnostic.dynamics.loudness_range_lu is not none else "n/a" }} LU</div>
+              {% for band_name, energy_db in o.report.diagnostic.spectral.band_energy_db.items() %}
+              <div>Énergie {{ band_name }}</div><div>{{ "%.1f"|format(energy_db) }} dB</div>
+              {% endfor %}
+            </div>
+          </details>
+        </td>
         <td>{{ "%.2f"|format(o.report.gain_staging_db) }} dB</td>
         <td>{{ "%.1f"|format(o.report.input_measurement.integrated_lufs) if o.report.input_measurement.integrated_lufs is not none else "n/a" }}
             → {{ "%.1f"|format(o.report.final_measurement.integrated_lufs) if o.report.final_measurement.integrated_lufs is not none else "n/a" }} LUFS</td>
@@ -79,7 +101,7 @@ _HTML_TEMPLATE = Template(
               {% if step.extra and step.extra.bands %}
               <ul class="step-bands">
               {% for band in step.extra.bands %}
-                <li>{{ band }}</li>
+                <li><span class="band-summary">{{ band.summary }}</span><span class="band-reason">{{ band.reason }}</span></li>
               {% endfor %}
               </ul>
               {% endif %}
@@ -107,8 +129,7 @@ _HTML_TEMPLATE = Template(
   </table>
 </body>
 </html>
-"""
-)
+""")
 
 
 def write_reports(result: BatchResult, output_dir: str | Path, profile_key: str) -> dict:

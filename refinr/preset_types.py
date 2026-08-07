@@ -15,7 +15,7 @@ import struct
 from pathlib import Path
 
 
-class PluginRole(str, enum.Enum):
+class PluginRole(str, enum.Enum):  # noqa: UP042 - StrEnum nécessite 3.11+, compat plus large
     EQ = "eq"
     SATURATION = "saturation"
     TAPE = "tape"
@@ -42,13 +42,13 @@ class PluginPreset:
 
     name: str
     source_path: Path
-    component_type: str        # OSType 4-char, ex "aufx"
-    component_subtype: str     # identifie le plugin précis, ex "Fq4A"
+    component_type: str  # OSType 4-char, ex "aufx"
+    component_subtype: str  # identifie le plugin précis, ex "Fq4A"
     component_manufacturer: str  # ex "FabF"
-    full_state: dict           # le plist complet, à passer tel quel à AUAudioUnit.fullState
+    full_state: dict  # le plist complet, à passer tel quel à AUAudioUnit.fullState
     role: PluginRole | None = None
-    tags: tuple[str, ...] = ()          # métadonnées de sélection (voir *.meta.yaml)
-    intensity: str | None = None        # "light" | "medium" | "heavy" si renseigné
+    tags: tuple[str, ...] = ()  # métadonnées de sélection (voir *.meta.yaml)
+    intensity: str | None = None  # "light" | "medium" | "heavy" si renseigné
 
 
 def load_aupreset(path: str | Path) -> PluginPreset:
@@ -77,7 +77,7 @@ class ChainStepReport:
     plugin_name: str
     preset_name: str
     preset_path: str
-    reason: str                 # pourquoi ce preset a été choisi pour ce fichier
+    reason: str  # pourquoi ce preset a été choisi pour ce fichier
     pre_measurement: dict
     post_measurement: dict
     extra: dict = dataclasses.field(default_factory=dict)

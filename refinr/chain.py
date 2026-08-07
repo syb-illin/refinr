@@ -29,8 +29,8 @@ import time
 from pathlib import Path
 
 from . import loudness
-from .analysis import analyze, FileAnalysis
-from .audio_io import AudioBuffer, load_wav, save_wav
+from .analysis import FileAnalysis, analyze
+from .audio_io import load_wav, save_wav
 from .preset_mapping import PresetLibrary, select_chain
 from .preset_types import ChainStepReport, PluginRole
 from .profiles import DestinationProfile, ProfileCatalog
@@ -55,12 +55,45 @@ def _describe_band(b: Band) -> str:
     return " ".join(parts)
 
 
+def _build_diagnostic(analysis: FileAnalysis) -> dict:
+    """Diagnostic COMPLET de l'analyse, pas juste les tags résumés — toutes
+    les mesures brutes qui ont servi (ou pas) à décider des corrections."""
+    return {
+        "tags": analysis.summary_tags(),
+        "spectral": {
+            "band_energy_db": {k: round(v, 2) for k, v in analysis.spectral.band_energy_db.items()},
+            "spectral_centroid_hz": round(analysis.spectral.spectral_centroid_hz, 1),
+            "tilt_db_per_octave": round(analysis.spectral.tilt_db_per_octave, 3),
+        },
+        "dynamics": {
+            "crest_factor_db": round(analysis.dynamics.crest_factor_db, 2),
+            "clipping_ratio_pct": round(analysis.dynamics.clipping_ratio * 100, 3),
+            "loudness_range_lu": (
+                round(analysis.dynamics.loudness_range_lu, 2)
+                if analysis.dynamics.loudness_range_lu is not None
+                else None
+            ),
+            "stereo_correlation": round(analysis.dynamics.stereo_correlation, 3),
+        },
+        "loudness": {
+            "integrated_lufs": (
+                round(analysis.loudness.integrated_lufs, 2)
+                if analysis.loudness.integrated_lufs == analysis.loudness.integrated_lufs
+                else None
+            ),
+            "sample_peak_dbfs": round(analysis.loudness.sample_peak_dbfs, 2),
+            "true_peak_dbtp": round(analysis.loudness.true_peak_dbtp, 2),
+        },
+    }
+
+
 @dataclasses.dataclass
 class FileProcessingReport:
     input_path: str
     output_path: str
     destination_profile: str
     analysis_tags: list[str]
+    diagnostic: dict
     steps: list[ChainStepReport]
     input_measurement: dict
     gain_staging_db: float
@@ -99,6 +132,7 @@ def process_file(
 
     file_analysis: FileAnalysis = analyze(buffer)
     tags = file_analysis.summary_tags()
+    diagnostic = _build_diagnostic(file_analysis)
 
     gained_buffer, gain_db = loudness.gain_to_target_lufs(
         buffer,
@@ -111,7 +145,13 @@ def process_file(
     # sélection de preset. Saturation/Tape : sélection par tags, faute
     # d'avoir reverse-engineered Saturn2/HG2/J37 pour l'instant.
     eq_bands = decide_bands(file_analysis)
-    eq_reason = "EQ Pro-Q4 piloté dynamiquement : " + "; ".join(_describe_band(b) for b in eq_bands)
+    if eq_bands:
+        eq_reason = (
+            f"{len(eq_bands)} bande(s) EQ décidée(s) à partir du diagnostic ci-dessus (voir raison "
+            "détaillée par bande)."
+        )
+    else:
+        eq_reason = "Aucune correction EQ jugée nécessaire — diagnostic dans les limites normales."
     eq_preset = make_dynamic_preset(f"refinr auto EQ — {input_path.name}", eq_bands)
 
     selection = select_chain(library, file_analysis, roles=(PluginRole.SATURATION, PluginRole.TAPE))
@@ -144,7 +184,7 @@ def process_file(
                 reason=eq_reason,
                 pre_measurement=_measurement_to_dict(pre_measure),
                 post_measurement=_measurement_to_dict(post_measure),
-                extra={"bands": [_describe_band(b) for b in eq_bands]},
+                extra={"bands": [{"summary": _describe_band(b), "reason": b.reason} for b in eq_bands]},
             )
         )
         for role, result in chosen_extra_presets:
@@ -173,7 +213,7 @@ def process_file(
                 reason=eq_reason + " [SIMULÉ — AU non appliqué hors macOS]",
                 pre_measurement={},
                 post_measurement={},
-                extra={"bands": [_describe_band(b) for b in eq_bands]},
+                extra={"bands": [{"summary": _describe_band(b), "reason": b.reason} for b in eq_bands]},
             )
         )
         for role, result in chosen_extra_presets:
@@ -222,6 +262,7 @@ def process_file(
         output_path=str(output_path),
         destination_profile=profile.key,
         analysis_tags=tags,
+        diagnostic=diagnostic,
         steps=steps,
         input_measurement=_measurement_to_dict(input_measurement),
         gain_staging_db=round(gain_db, 3),

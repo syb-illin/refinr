@@ -26,9 +26,13 @@ DEFAULT_PRESETS_ROOT = Path(__file__).resolve().parent.parent / "config" / "pres
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("files", nargs="+", help="Fichiers WAV à traiter")
-    parser.add_argument("--profile", required=True, help="Clé du profil de destination (voir config/destination_profiles.yaml)")
+    parser.add_argument(
+        "--profile", required=True, help="Clé du profil de destination (voir config/destination_profiles.yaml)"
+    )
     parser.add_argument("--out", default=str(Path.home() / "Refinr_Output"), help="Dossier de sortie")
-    parser.add_argument("--presets-root", default=str(DEFAULT_PRESETS_ROOT), help="Racine de la bibliothèque de presets")
+    parser.add_argument(
+        "--presets-root", default=str(DEFAULT_PRESETS_ROOT), help="Racine de la bibliothèque de presets"
+    )
     parser.add_argument("--workers", type=int, default=4, help="Nombre de process parallèles")
     parser.add_argument("--subtype", default="PCM_24", choices=["PCM_16", "PCM_24", "PCM_32", "FLOAT"])
     args = parser.parse_args()

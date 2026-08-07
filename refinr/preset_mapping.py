@@ -81,7 +81,7 @@ class PresetLibrary:
     entries_by_role: dict[PluginRole, list[PresetEntry]]
 
     @classmethod
-    def load(cls, root: str | Path = DEFAULT_PRESETS_ROOT) -> "PresetLibrary":
+    def load(cls, root: str | Path = DEFAULT_PRESETS_ROOT) -> PresetLibrary:
         root = Path(root)
         entries_by_role: dict[PluginRole, list[PresetEntry]] = {role: [] for role in _ROLE_DIRS}
 
@@ -96,7 +96,7 @@ class PresetLibrary:
                 suited_for = SuitedFor()
                 priority = 0
                 if meta_path.exists():
-                    with open(meta_path, "r", encoding="utf-8") as fh:
+                    with open(meta_path, encoding="utf-8") as fh:
                         meta = yaml.safe_load(fh) or {}
                     preset.tags = tuple(meta.get("tags", []))
                     preset.intensity = meta.get("intensity")
