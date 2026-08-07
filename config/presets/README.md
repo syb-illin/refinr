@@ -30,15 +30,6 @@ Tags actuellement produits par l'analyse : `clipping_detected`,
 `already_compressed`, `very_dynamic`, `bright`, `dark`, `balanced_tonal`,
 `wide_stereo`, `narrow_mono_like`.
 
-## ⚠️ Fichiers de démo à supprimer
-
-`eq/bright_cut_for_dark.aupreset`, `eq/bright_cut_for_dark.meta.yaml` et
-`eq/universal_gentle.aupreset` sont des **presets factices** (générés
-pendant les tests, ce ne sont pas de vrais exports FabFilter) qui illustrent
-juste le mécanisme de sélection. Supprime-les dès que tu ajoutes tes vrais
-presets Pro-Q4/Saturn 2/HG2/J37 — sinon ils seront proposés comme candidats
-"universels" par erreur.
-
 ## Workflow recommandé pour peupler la bibliothèque
 
 1. Dans chaque plugin, créer plusieurs variantes couvrant une plage de

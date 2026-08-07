@@ -24,7 +24,7 @@ OPTIONS = {
         "CFBundleName": "Refinr",
         "CFBundleDisplayName": "Refinr",
         "CFBundleIdentifier": "local.refinr",
-        "CFBundleShortVersionString": "0.1.1",
+        "CFBundleShortVersionString": "0.1.2",
         "NSHumanReadableCopyright": "Usage personnel",
         # Nécessaire si l'app doit un jour lire des fichiers audio via
         # microphone/entrées ; pour du traitement offline de fichiers WAV
