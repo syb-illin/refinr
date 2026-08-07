@@ -8,6 +8,10 @@ suivent sont ajoutées automatiquement.
 
 <!-- CHANGELOG_INSERT -->
 
+## [0.2.0] - 2026-08-07 (minor)
+- feat: versioning automatique via hook post-commit (bump major/minor/patch selon convention de commit), changelog auto-généré, badges Build/CI/Version/Coverage synchronisés (shields.io + tag GitHub dynamique), auto-tag + notes de release depuis CHANGELOG.md
+
+
 ## [0.1.8] - 2026-08-07 (patch)
 - fix: stub `process_chain_offline` en pass-through pour les tests sur macOS CI (les plugins commerciaux réels ne sont pas installés sur les runners hébergés), la chaîne complète reste testée sauf le rendu DSP réel
 
