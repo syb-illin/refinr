@@ -160,6 +160,16 @@ taguer à la main. Le bouton **"Run workflow"** (onglet Actions) permet
 aussi un build ponctuel sans tag (artifact téléchargeable 90 jours, pas de
 Release).
 
+**Requis pour que le tag auto-créé déclenche bien ce workflow :** un
+secret de repo `RELEASE_PAT` (Settings → Secrets and variables → Actions),
+un Personal Access Token classique scope `repo`. Sans lui, `ci.yml` pousse
+quand même le tag avec succès, mais GitHub bloque volontairement le
+déclenchement en cascade des workflows quand le push vient du
+`GITHUB_TOKEN` par défaut d'un run Actions (anti-boucle infinie) — le tag
+existe alors sans jamais avoir été buildé, silencieusement, sans erreur
+visible nulle part. C'est exactement ce qui est arrivé pour `v0.2.0` et
+`v0.2.1` avant la mise en place de ce secret.
+
 Je n'ai ni `gh` (pas installable : le réseau de mon environnement
 d'exécution bloque le téléchargement du binaire) ni `api.github.com`
 accessible pour suivre l'avancement d'un build — seul `git push` en HTTPS

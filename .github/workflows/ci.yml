@@ -5,11 +5,24 @@ name: CI
 # indépendante de PyObjC/macOS (voir README > Tests). Sur un push direct
 # vers main uniquement (pas sur les PR) : le badge de couverture est
 # régénéré/commité, PUIS un tag "vX.Y.Z" est créé automatiquement à partir
-# de refinr.__version__ (bumpée par le hook .githooks/commit-msg) s'il
+# de refinr.__version__ (bumpée par le hook .githooks/post-commit) s'il
 # n'existe pas déjà — ce tag déclenche build-macos-app.yml, qui build,
 # zippe et crée la GitHub Release. Ainsi version affichée dans l'app,
 # badge de version (dynamique, lit le tag), zip et Release restent
 # synchronisés sans étape manuelle.
+#
+# IMPORTANT — pourquoi ce workflow a besoin d'un secret RELEASE_PAT :
+# GitHub bloque volontairement les déclenchements en cascade quand un push
+# est fait avec le GITHUB_TOKEN par défaut d'un run Actions (anti-boucle
+# infinie). Concrètement : sans PAT, ce job pousse bien le tag vX.Y.Z avec
+# succès, mais ce push NE déclenche PAS build-macos-app.yml — silencieux,
+# aucune erreur nulle part, juste un tag qui existe sans jamais avoir de
+# build (vécu en prod : v0.2.0 et v0.2.1 créés mais jamais buildés). Avec
+# un vrai PAT (secret repo `RELEASE_PAT`, scope `repo`), le push est traité
+# comme un push humain normal et déclenche bien le workflow suivant.
+# Sans ce secret configuré, le job retombe sur le token par défaut (le tag
+# est quand même créé, juste sans déclenchement automatique du build — il
+# faudra alors le déclencher à la main via "Run workflow").
 on:
   push:
     branches: [main]
@@ -27,6 +40,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT || github.token }}
 
       - uses: actions/setup-python@v6
         with:
