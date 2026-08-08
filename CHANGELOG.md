@@ -8,6 +8,10 @@ suivent sont ajoutées automatiquement.
 
 <!-- CHANGELOG_INSERT -->
 
+## [0.3.0] - 2026-08-08 (minor)
+- feat: mode Suno/IA générée (2 corrections EQ opt-in, sourcées dans config/suno_artifacts_kb.md) + export des presets Pro-Q4 dynamiques en vrais .aupreset réutilisables dans Logic Pro (preset_types.write_aupreset), wiring GUI (menu Réglages) et batch
+
+
 ## [0.2.2] - 2026-08-08 (patch)
 - fix: le tag auto-créé par ci.yml (GITHUB_TOKEN par défaut) ne déclenchait jamais build-macos-app.yml — GitHub bloque volontairement les déclenchements en cascade venant du token par défaut d'un run Actions. Bascule sur un secret RELEASE_PAT (avec repli sur le token par défaut si absent), documenté dans le README
 

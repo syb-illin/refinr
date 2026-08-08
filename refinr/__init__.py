@@ -15,4 +15,4 @@ vérifiées séparément du hosting AU réel (qui requiert AudioToolbox via
 ctypes + Foundation via PyObjC, donc macOS).
 """
 
-__version__ = "0.2.2"
+__version__ = "0.3.0"
