@@ -21,11 +21,21 @@ from tests.generate_test_audio import SR
 
 
 def _jarring_sections_buffer(seconds_per_section: float = 6.0) -> AudioBuffer:
-    """Alterne une section très calme et une section forte, plusieurs fois —
-    imite des sauts de volume section à section (couplet/refrain extrême)."""
+    """Alterne une section modérée et une section forte, plusieurs fois —
+    imite des sauts de volume section à section (couplet/refrain extrême).
+
+    Amplitudes calibrées contre la VRAIE mesure `pyebur128` (et non
+    l'approximation maison) : un contraste modéré/quasi-silence (ex.
+    0.03/0.85) est en réalité gaté (silence gate EBU R128 à -70 LUFS puis
+    gate relatif à -20LU sous la moyenne) et ne produit qu'une LRA proche de
+    0 — le calcul de référence EXCLUT les portions quasi-silencieuses de la
+    plage mesurée, il ne les traite pas comme l'extrémité basse. Un vrai
+    "jarring" LRA (>10LU, ex. couplet/refrain réaliste) nécessite deux
+    niveaux tous deux bien au-dessus du silence gate (0.1/0.9 mesuré à
+    ~19LU via `refinr.loudness.measure_loudness_range`)."""
     t = np.linspace(0, seconds_per_section, int(SR * seconds_per_section), endpoint=False)
-    quiet = (0.03 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
-    loud = (0.85 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+    quiet = (0.1 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+    loud = (0.9 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
     mono = np.concatenate([quiet, loud, quiet, loud])
     return AudioBuffer(samples=np.stack([mono, mono], axis=1), sample_rate=SR)
 

@@ -3,7 +3,9 @@ numpy>=1.26
 scipy>=1.11
 soundfile>=0.12
 pyloudnorm>=0.1.1
-pyebur128>=0.1.7      # bindings de libebur128 (ref. C utilisée par ffmpeg/VLC) —
+pyebur128>=0.1.1      # bindings de libebur128 (ref. C utilisée par ffmpeg/VLC) — 0.1.7
+                       # n'a jamais existé sur PyPI (seules 0.1.0/0.1.1 sont publiées),
+                       # ancien pin invalide qui faisait échouer `pip install` en CI —
                        # contre-vérification indépendante du LUFS/true-peak au
                        # gate QC final (refinr/reference_loudness.py), distincte
                        # de la mesure pyloudnorm utilisée dans le reste du pipeline
