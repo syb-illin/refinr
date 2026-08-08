@@ -8,6 +8,10 @@ suivent sont ajoutées automatiquement.
 
 <!-- CHANGELOG_INSERT -->
 
+## [0.2.2] - 2026-08-08 (patch)
+- fix: le tag auto-créé par ci.yml (GITHUB_TOKEN par défaut) ne déclenchait jamais build-macos-app.yml — GitHub bloque volontairement les déclenchements en cascade venant du token par défaut d'un run Actions. Bascule sur un secret RELEASE_PAT (avec repli sur le token par défaut si absent), documenté dans le README
+
+
 ## [0.2.1] - 2026-08-07 (patch)
 - fix: le stub AU hosting des tests ne traversait pas les workers ProcessPoolExecutor de batch.py (monkeypatch process-local), d'où l'échec CI macOS malgré le fix précédent — remplacé par une variable d'env REFINR_TEST_DISABLE_AU_HOSTING héritée par les process enfants
 
