@@ -12,7 +12,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from refinr.audio_io import AudioBuffer
-from refinr.integrity import check_integrity
+from refinr.integrity import MONO_FOLD_LOSS_ISSUE_DB, check_integrity
 
 SR = 44100
 
@@ -45,6 +45,7 @@ def test_clean_signal_has_no_issues():
     assert not report.has_inf
     assert not report.dc_offset_issue
     assert report.clip_event_count == 0
+    assert not report.mono_fold_issue
     assert report.issue_tags() == []
 
 
@@ -171,6 +172,44 @@ def test_band_stereo_correlation_low_on_inverted_channel():
     significant_bands = {k: v for k, v in report.band_stereo_correlation.items() if k != "sub"}
     assert all(corr < -0.5 for corr in significant_bands.values()), significant_bands
     assert set(significant_bands) <= set(report.localized_phase_issue_bands)
+
+
+def test_uncorrelated_stereo_not_flagged_as_mono_fold_issue():
+    """Deux canaux indépendants (bruit large-bande, seeds différents) perdent
+    naturellement ~3dB au repli mono — c'est la ligne de base normale d'un
+    signal stéréo non corrélé, PAS une annulation de phase à signaler."""
+    left = _broadband_clean_signal()
+    right = np.random.default_rng(99).normal(0, 0.12, left.shape).astype(np.float32)
+    from scipy.signal import butter, sosfiltfilt
+
+    sos = butter(4, 20, btype="high", fs=SR, output="sos")
+    right = sosfiltfilt(sos, right).astype(np.float32)
+
+    stereo = np.stack([left, right], axis=1)
+    report = check_integrity(AudioBuffer(samples=stereo, sample_rate=SR))
+    assert report.mono_fold_loss_db < 4.0, report.mono_fold_loss_db
+    assert not report.mono_fold_issue
+    assert "mono_fold_down_issue" not in report.issue_tags()
+
+
+def test_out_of_phase_stereo_flagged_as_mono_fold_issue():
+    """Canal droit inversé (hors-phase parfait) -> quasi-annulation totale au
+    repli mono, un vrai problème de compatibilité mono à signaler."""
+    mono = _broadband_clean_signal()
+    stereo = np.stack([mono, -mono], axis=1)
+    report = check_integrity(AudioBuffer(samples=stereo, sample_rate=SR))
+    assert report.mono_fold_loss_db > MONO_FOLD_LOSS_ISSUE_DB
+    assert report.mono_fold_issue
+    assert "mono_fold_down_issue" in report.issue_tags()
+
+
+def test_identical_channels_no_mono_fold_loss():
+    """Un vrai mono dupliqué en stéréo (corrélation parfaite) ne doit montrer
+    aucune perte au repli mono."""
+    mono = _tone(1000, 1.0)
+    report = check_integrity(AudioBuffer(samples=_stereo(mono), sample_rate=SR))
+    assert report.mono_fold_loss_db < 0.5
+    assert not report.mono_fold_issue
 
 
 def test_mono_buffer_does_not_crash():

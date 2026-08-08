@@ -90,6 +90,8 @@ def _clean_integrity(localized_phase_issue_bands=None) -> IntegrityReport:
         lossy_source_suspected=False,
         band_stereo_correlation={},
         localized_phase_issue_bands=localized_phase_issue_bands or [],
+        mono_fold_loss_db=0.0,
+        mono_fold_issue=False,
     )
 
 

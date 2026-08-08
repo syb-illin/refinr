@@ -21,6 +21,13 @@ que l'analyse spectrale/dynamique globale ne fait PAS :
     phase localisé à une seule zone du spectre (ex: le haut-médium, signature
     rapportée pour les artefacts de génération IA) peut être noyé dans une
     corrélation large-bande qui paraît saine.
+  - repli MONO (mono fold-down) : perte de niveau au sommage (L+R)/2 par
+    rapport à la moyenne RMS des deux canaux. Un signal stéréo non corrélé
+    perd naturellement ~3dB à ce sommage (rien d'anormal) ; un déficit
+    nettement supérieur signale une vraie annulation de phase, un problème
+    réel de compatibilité mono (lecture téléphone/enceinte Bluetooth/club en
+    mono partiel) — jusqu'ici jamais constaté explicitement (voir l'ancien
+    commentaire "future mono fold-down check, backlog" dans stereo_width.py).
 
 Rien de tout ça n'est corrigé automatiquement ici — ce module CONSTATE,
 `chain.py` décide quoi en faire (avertissement dans le rapport au minimum,
@@ -46,6 +53,16 @@ ROLLOFF_ENERGY_FRACTION = 0.99
 LOSSY_ROLLOFF_HZ_THRESHOLD = 16000.0
 LOSSY_CHECK_MIN_SAMPLE_RATE = 40000  # inutile de vérifier sur du 22kHz déjà bas
 LOCALIZED_PHASE_ISSUE_CORRELATION = 0.3
+
+# Perte (dB) au repli mono au-delà de laquelle on considère qu'il y a une
+# vraie annulation de phase, pas juste la perte "normale" d'un signal stéréo
+# non corrélé. Théorie : pour deux canaux indépendants de même RMS sigma,
+# mono=(L+R)/2 a une RMS de sigma/sqrt(2) (~-3dB) par rapport à la moyenne
+# RMS des deux canaux (=sigma) — c'est la ligne de base attendue, pas un
+# défaut. On fixe le seuil à 2x cette perte théorique (6dB) pour ne signaler
+# que les cas où quelque chose s'annule réellement (contenu hors-phase),
+# pas la largeur stéréo normale d'un mix.
+MONO_FOLD_LOSS_ISSUE_DB = 6.0
 
 # Mêmes bandes que analysis.BANDS_HZ (dupliqué volontairement : ce module
 # reste indépendant d'analysis.py, testable isolément).
@@ -89,6 +106,9 @@ class IntegrityReport:
     band_stereo_correlation: dict[str, float]
     localized_phase_issue_bands: list[str]  # bandes avec corrélation < seuil, isolément du score large-bande
 
+    mono_fold_loss_db: float  # perte au repli (L+R)/2 vs moyenne RMS des canaux, voir MONO_FOLD_LOSS_ISSUE_DB
+    mono_fold_issue: bool
+
     def issue_tags(self) -> list[str]:
         """Tags courts, dans le même esprit que FileAnalysis.summary_tags()."""
         tags = []
@@ -108,6 +128,8 @@ class IntegrityReport:
             tags.append("lossy_source_suspected")
         if self.localized_phase_issue_bands:
             tags.append("localized_phase_issue")
+        if self.mono_fold_issue:
+            tags.append("mono_fold_down_issue")
         return tags
 
 
@@ -239,6 +261,30 @@ def _band_stereo_correlation(stereo: np.ndarray, sample_rate: int) -> dict[str, 
     return result
 
 
+def _mono_fold_down_loss_db(stereo: np.ndarray) -> float:
+    """
+    Perte de niveau (dB) au repli mono (L+R)/2, par rapport à la moyenne RMS
+    des deux canaux stéréo — voir MONO_FOLD_LOSS_ISSUE_DB pour l'explication
+    de la ligne de base ~3dB "normale". 0.0 pour une source mono ou un canal
+    quasi silencieux (rien à mesurer). Une valeur élevée (proche de
+    l'annulation totale) est plafonnée à 120.0 plutôt que de tendre vers
+    l'infini.
+    """
+    if stereo.ndim < 2 or stereo.shape[1] < 2:
+        return 0.0
+    left, right = stereo[:, 0], stereo[:, 1]
+    rms_left = float(np.sqrt(np.mean(left**2)))
+    rms_right = float(np.sqrt(np.mean(right**2)))
+    reference_rms = (rms_left + rms_right) / 2.0
+    if reference_rms < 1e-9:
+        return 0.0
+    mono = (left + right) / 2.0
+    mono_rms = float(np.sqrt(np.mean(mono**2)))
+    if mono_rms < 1e-9:
+        return 120.0  # annulation quasi totale
+    return min(120.0, 20.0 * np.log10(reference_rms / mono_rms))
+
+
 def check_integrity(buffer: AudioBuffer) -> IntegrityReport:
     samples = buffer.samples
     stereo = buffer.as_stereo()
@@ -283,6 +329,9 @@ def check_integrity(buffer: AudioBuffer) -> IntegrityReport:
     band_corr = _band_stereo_correlation(safe_stereo, buffer.sample_rate)
     localized_issue_bands = [name for name, corr in band_corr.items() if corr < LOCALIZED_PHASE_ISSUE_CORRELATION]
 
+    mono_fold_loss_db = _mono_fold_down_loss_db(safe_stereo) if samples.ndim > 1 and samples.shape[1] >= 2 else 0.0
+    mono_fold_issue = mono_fold_loss_db > MONO_FOLD_LOSS_ISSUE_DB
+
     return IntegrityReport(
         has_nan=has_nan,
         has_inf=has_inf,
@@ -299,4 +348,6 @@ def check_integrity(buffer: AudioBuffer) -> IntegrityReport:
         lossy_source_suspected=lossy_suspected,
         band_stereo_correlation={k: round(v, 3) for k, v in band_corr.items()},
         localized_phase_issue_bands=localized_issue_bands,
+        mono_fold_loss_db=round(mono_fold_loss_db, 2),
+        mono_fold_issue=mono_fold_issue,
     )

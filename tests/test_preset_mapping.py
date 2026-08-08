@@ -32,11 +32,14 @@ def _make_low_end_dominant(seconds: float = 3.0) -> np.ndarray:
     return np.stack([mono, mono], axis=1).astype(np.float32)
 
 
-def test_tape_role_has_three_presets_loaded():
+def test_tape_role_has_four_presets_loaded():
+    """3 presets statiques (sélection par tags) + j37_baseline_reference,
+    ce dernier servant de template au pilotage dynamique (voir
+    chain._find_j37_template) plutôt qu'à la sélection par tags elle-même."""
     library = PresetLibrary.load(PRESETS_ROOT)
     entries = library.entries_by_role[PluginRole.TAPE]
     names = {e.preset.name for e in entries}
-    assert names == {"for all instr bus insert", "for suno", "my bass"}
+    assert names == {"for all instr bus insert", "for suno", "my bass", "j37_baseline_reference"}
 
 
 def test_tape_role_defaults_to_general_bus_insert_without_kb_tags():
@@ -85,7 +88,7 @@ def test_bass_di_preset_selected_for_low_end_dominant_content():
 
 
 if __name__ == "__main__":
-    test_tape_role_has_three_presets_loaded()
+    test_tape_role_has_four_presets_loaded()
     test_tape_role_defaults_to_general_bus_insert_without_kb_tags()
     test_tape_role_prefers_suno_tuned_preset_when_kb_band_elevated()
     test_bass_di_preset_never_wins_on_full_mix_content()

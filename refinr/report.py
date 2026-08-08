@@ -14,7 +14,15 @@ from jinja2 import Template
 
 from .batch import BatchResult
 
-_HTML_TEMPLATE = Template("""
+# autoescape=True : les noms de fichiers (o.input_path) et le texte généré
+# par l'analyse (tags, raisons de bande, avertissements) sont insérés dans
+# le HTML sans échappement manuel — sans autoescape, un nom de fichier
+# contenant des caractères HTML se retrouverait injecté tel quel dans le
+# rapport. Le seul endroit qui a VRAIMENT besoin de HTML brut (les `<br>`
+# entre avertissements) le déclare explicitement via le filtre `|safe`,
+# précisément ce que l'autoescape est censé permettre de distinguer.
+_HTML_TEMPLATE = Template(
+    """
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -129,7 +137,9 @@ _HTML_TEMPLATE = Template("""
   </table>
 </body>
 </html>
-""")
+""",
+    autoescape=True,
+)
 
 
 def write_reports(result: BatchResult, output_dir: str | Path, profile_key: str) -> dict:

@@ -7,9 +7,19 @@ Orchestrateur de la chaîne de traitement complète, PAR FICHIER :
   3. EQ Pro-Q4 : PILOTAGE AUTOMATIQUE (proq4_control.decide_bands), pas de
      sélection parmi des presets figés — les réglages (fréquence/gain/Q/
      forme/pente/stéréo/dynamique) sont décidés directement à partir de
-     l'analyse de CE fichier. Saturation (Saturn2/HG2) et Tape (J37) restent
-     sur sélection de presets par tags (preset_mapping.py) — ces plugins
-     n'ont pas encore été reverse-engineered pour un pilotage fin.
+     l'analyse de CE fichier. Saturation : PILOTAGE AUTOMATIQUE également
+     (taip_control.decide_params, Baby Audio TAIP) dès qu'un preset TAIP de
+     référence est présent dans la bibliothèque (voir `_find_taip_template`)
+     — sinon repli sur la sélection de presets par tags (preset_mapping.py).
+     Tape (J37) : PILOTAGE AUTOMATIQUE PARTIEL (j37_control.decide_params) —
+     Saturation/Noise/Wow/Flutter sont pilotés dynamiquement dès que
+     `config/presets/tape/j37_baseline_reference.aupreset` est présent (voir
+     `_find_j37_template`), mais Speed/Bias/Formula/Modeled Tracks restent
+     FIXES sur ce preset de référence : reverse-engineering confirmé que ces
+     quatre-là déclenchent chacun un recalcul physique corrélé sur 30 à 69
+     indices à la fois (pas de mapping scalaire possible), voir la docstring
+     de `j37_control.py` pour le détail. Sinon (aucun preset de référence
+     trouvé), repli sur la sélection de presets par tags, comme avant.
   4. Traitement réel via les AU (au_host.py, macOS uniquement)
   5. Transient shaping (transient_shaping.py) : corrige les attaques molles/
      lissées sur du matériel déjà compressé — décidé automatiquement à
@@ -43,16 +53,24 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
+
 from . import loudness
 from .analysis import FileAnalysis, analyze
 from .audio_io import load_wav, resample_if_needed, save_wav
+from .j37_control import J37Template
+from .j37_control import decide_params as decide_j37_params
+from .j37_control import make_dynamic_preset as make_dynamic_j37_preset
 from .macro_dynamics import apply_macro_compression, decide_macro_compression
-from .preset_mapping import PresetLibrary, select_chain
+from .preset_mapping import PresetLibrary, SelectionResult, select_chain
 from .preset_types import ChainStepReport, PluginRole, write_aupreset
 from .profiles import DestinationProfile, ProfileCatalog
 from .proq4_control import Band, decide_bands, make_dynamic_preset
 from .reference_loudness import ReferenceMeasurement, measure_reference
 from .stereo_width import apply_stereo_width, decide_width_factor
+from .taip_control import TaipTemplate
+from .taip_control import decide_params as decide_taip_params
+from .taip_control import make_dynamic_preset as make_dynamic_taip_preset
 from .transient_shaping import apply_transient_shaping, decide_attack_amount_db
 
 # Tolérances du gate de validation post-traitement (voir _validate_output).
@@ -92,6 +110,65 @@ class OutputValidationError(RuntimeError):
 # neuf) — une variable d'environnement, elle, est héritée par les process
 # enfants. Positionnée par tests/conftest.py, jamais en usage normal.
 AU_HOSTING_AVAILABLE = sys.platform == "darwin" and os.environ.get("REFINR_TEST_DISABLE_AU_HOSTING") != "1"
+
+
+def _find_taip_template(library: PresetLibrary) -> TaipTemplate | None:
+    """
+    Cherche un preset TAIP réel dans la bibliothèque SATURATION pour servir
+    de template (enveloppe plist + attributs `<TAIP_1 ...>`, voir
+    `taip_control.TaipTemplate`) au pilotage dynamique — le format TAIP
+    n'a pas besoin d'être reverse-engineré au-delà de ses `<PARAM>` (déjà
+    fait, voir taip_control.py), seule l'enveloppe doit être copiée depuis
+    un vrai fichier.
+
+    Retourne None si aucun preset TAIP n'est présent (bibliothèque perso
+    sans TAIP, ou role SATURATION vide) : `process_file` retombe alors sur
+    la sélection statique par tags (preset_mapping), exactement comme avant
+    l'introduction du pilotage dynamique de la saturation.
+    """
+    for entry in library.entries_by_role.get(PluginRole.SATURATION, []):
+        blob = entry.preset.full_state.get("jucePluginState")
+        if isinstance(blob, (bytes, bytearray)) and bytes(blob).startswith(b"VC2!"):
+            try:
+                return TaipTemplate.from_preset(entry.preset)
+            except ValueError:
+                continue
+    return None
+
+
+# Nom de fichier EXACT (sans extension) requis pour servir de template J37 —
+# contrairement à TAIP (une seule instance réelle disponible, donc aucune
+# ambiguïté), la bibliothèque TAPE contient PLUSIEURS vrais presets J37
+# (bass_di, bus_insert_general, suno_artifact_tuned, en plus de la
+# référence). Tous parseraient structurellement comme un J37 valide, mais
+# chacun fige Speed/Bias/Formula/Modeled Tracks à des valeurs différentes et
+# pas forcément neutres (voir j37_control.py : ces quatre-là ne sont PAS
+# pilotables dynamiquement). Une correspondance par nom exact évite de piocher
+# au hasard un preset accordé pour un usage créatif précis comme base du
+# pilotage dynamique corrective.
+J37_TEMPLATE_STEM = "j37_baseline_reference"
+
+
+def _find_j37_template(library: PresetLibrary) -> J37Template | None:
+    """
+    Cherche PRÉCISÉMENT `config/presets/tape/j37_baseline_reference.aupreset`
+    (voir J37_TEMPLATE_STEM) dans la bibliothèque TAPE pour servir de
+    template au pilotage dynamique partiel (voir `j37_control.py` : seuls
+    Saturation/Noise/Wow/Flutter sont pilotés, le reste vient de ce preset).
+
+    Retourne None si absent (bibliothèque perso sans ce fichier précis) :
+    `process_file` retombe alors sur la sélection statique par tags
+    (preset_mapping), exactement comme avant l'introduction du pilotage
+    dynamique du J37.
+    """
+    for entry in library.entries_by_role.get(PluginRole.TAPE, []):
+        if entry.preset.source_path.stem != J37_TEMPLATE_STEM:
+            continue
+        try:
+            return J37Template.from_preset(entry.preset)
+        except ValueError:
+            continue
+    return None
 
 
 def _describe_band(b: Band) -> str:
@@ -201,7 +278,6 @@ def _build_comparison_table(raw: FileAnalysis, refined: FileAnalysis) -> list[di
 
 def _validate_output(
     output_analysis: FileAnalysis,
-    final_measurement: dict,
     reference: ReferenceMeasurement | None,
     profile: DestinationProfile,
     input_duration_sec: float,
@@ -211,6 +287,18 @@ def _validate_output(
     Gate de conformité final, appliqué au WAV RÉELLEMENT écrit sur disque
     (relu depuis le fichier, pas le buffer en mémoire) — c'est ce fichier-là
     qui sera posté sur la plateforme, donc c'est lui qui doit être vérifié.
+
+    Le true peak / LUFS vérifiés ici viennent de `output_analysis.loudness`
+    — mesurés sur le fichier RÉELLEMENT écrit sur disque, PAS sur le buffer
+    d'avant écriture. Point important : avant l'introduction du
+    rééchantillonnage vers le format de livraison, ce gate utilisait la
+    mesure d'avant écriture (buffer déjà limité mais pas encore rééchantillonné) ;
+    or une conversion de fréquence d'échantillonnage peut créer un
+    dépassement inter-échantillon qui n'existait pas avant elle (ringing/
+    overshoot classique de tout resampling). `process_file` rééchantillonne
+    maintenant AVANT le limiteur final précisément pour que ce cas ne puisse
+    plus se produire, mais on vérifie ici la mesure du fichier réel quoi
+    qu'il arrive plutôt que de dépendre uniquement de cet ordre d'opérations.
 
     Retourne (erreurs_bloquantes, avertissements). Toute erreur bloquante
     déclenche `OutputValidationError` dans `process_file` (fichier supprimé).
@@ -222,7 +310,8 @@ def _validate_output(
     if integ.has_nan or integ.has_inf:
         errors.append("Échantillons invalides (NaN/Inf) détectés dans le fichier de sortie — export corrompu.")
 
-    measured_tp = final_measurement.get("true_peak_dbtp")
+    measured_tp = output_analysis.loudness.true_peak_dbtp
+    measured_tp = measured_tp if np.isfinite(measured_tp) else None
     worst_tp = measured_tp
     if reference is not None and measured_tp is not None:
         worst_tp = max(measured_tp, reference.true_peak_dbtp)
@@ -239,7 +328,8 @@ def _validate_output(
             "(ex: Ogg Vorbis Spotify, AAC YouTube)."
         )
 
-    measured_lufs = final_measurement.get("integrated_lufs")
+    measured_lufs = output_analysis.loudness.integrated_lufs
+    measured_lufs = measured_lufs if np.isfinite(measured_lufs) else None
     if measured_lufs is None:
         errors.append("Loudness intégrée finale non mesurable (signal silencieux ou invalide).")
     else:
@@ -283,6 +373,12 @@ def _validate_output(
         )
     if integ.localized_phase_issue_bands:
         warns.append(f"Problème de phase localisé en sortie sur : {', '.join(integ.localized_phase_issue_bands)}.")
+    if integ.mono_fold_issue:
+        warns.append(
+            f"Perte de {integ.mono_fold_loss_db:.1f}dB au repli mono (L+R)/2 en sortie — au-delà de la perte "
+            "~3dB normale d'un signal stéréo non corrélé, signe d'une annulation de phase réelle. À vérifier "
+            "en écoute mono (téléphone, enceinte Bluetooth, club en mono partiel) avant diffusion."
+        )
 
     return errors, warns
 
@@ -335,10 +431,12 @@ def process_file(
     connus des générateurs IA type Suno (voir `config/suno_artifacts_kb.md`
     et `proq4_control.decide_bands`) — opt-in, jamais activé par défaut.
 
-    `export_eq_preset_dir` : si fourni, écrit le preset Pro-Q4 dynamique
-    décidé pour CE fichier en vrai `.aupreset` réutilisable dans Logic Pro
-    (voir `preset_types.write_aupreset`) — le preset dynamique n'existe
-    sinon qu'en mémoire, piloté directement vers `au_host`.
+    `export_eq_preset_dir` : si fourni, écrit le(s) preset(s) piloté(s)
+    dynamiquement pour CE fichier en vrais `.aupreset` réutilisables dans
+    Logic Pro (voir `preset_types.write_aupreset`) — le preset Pro-Q4
+    (toujours), le preset TAIP (si `_find_taip_template` en a trouvé un) et
+    le preset J37 (si `_find_j37_template` en a trouvé un) n'existent sinon
+    qu'en mémoire, pilotés directement vers `au_host`.
 
     `output_subtype` : override manuel du bit depth de sortie (voir
     `audio_io.save_wav`). Si None (par défaut), utilise `profile.output_bit_depth`
@@ -389,14 +487,77 @@ def process_file(
         except OSError as exc:
             warnings.append(f"Export du preset .aupreset échoué pour {input_path.name}: {exc}")
 
-    selection = select_chain(library, file_analysis, roles=(PluginRole.SATURATION, PluginRole.TAPE))
+    # Saturation : pilotage DYNAMIQUE (taip_control) dès qu'un preset TAIP de
+    # référence est disponible dans la bibliothèque (voir _find_taip_template)
+    # — même logique que l'EQ Pro-Q4 ci-dessus, pas de sélection parmi des
+    # presets figés. Tape (J37) : pilotage DYNAMIQUE PARTIEL (j37_control) dès
+    # que le preset de référence exact est disponible (voir _find_j37_template)
+    # — Saturation/Noise/Wow/Flutter pilotés, Speed/Bias/Formula/Modeled Tracks
+    # figés sur ce preset (voir docstring de j37_control.py). Sans preset de
+    # référence pour l'un ou l'autre rôle, repli sur la sélection statique par
+    # tags (preset_mapping), comme avant l'introduction du pilotage dynamique.
+    taip_template = _find_taip_template(library)
+    j37_template = _find_j37_template(library)
+    static_roles = tuple(
+        role
+        for role, template in ((PluginRole.SATURATION, taip_template), (PluginRole.TAPE, j37_template))
+        if template is None
+    )
+    selection = select_chain(library, file_analysis, roles=static_roles)
 
     steps: list[ChainStepReport] = []
     processed_buffer = gained_buffer
 
-    chosen_extra_presets = []  # saturation/tape uniquement, EQ traité à part
+    # Résultats dynamiques indexés par rôle — assemblés dans l'ORDRE FIXE
+    # (SATURATION puis TAPE, voir chosen_extra_presets ci-dessous) quel que
+    # soit l'ordre dans lequel dynamique/statique sont décidés ici, pour que
+    # la chaîne AU garde toujours le flux de signal documenté EQ -> saturation
+    # -> tape -> leveling.
+    dynamic_results: dict[PluginRole, SelectionResult] = {}
+
+    if taip_template is not None:
+        taip_params = decide_taip_params(file_analysis)
+        taip_preset = make_dynamic_taip_preset(
+            f"refinr auto saturation (TAIP) — {input_path.name}", taip_params, taip_template
+        )
+        taip_reason = (
+            "Saturation pilotée DYNAMIQUEMENT (Baby Audio TAIP, même principe que l'EQ Pro-Q4) à partir du "
+            f"diagnostic de ce fichier (voir taip_control.decide_params) — paramètres : {taip_params}."
+        )
+        dynamic_results[PluginRole.SATURATION] = SelectionResult(preset=taip_preset, reason=taip_reason)
+
+        if export_eq_preset_dir is not None:
+            taip_export_path = Path(export_eq_preset_dir) / f"{input_path.stem}_TAIP.aupreset"
+            try:
+                write_aupreset(taip_preset, taip_export_path)
+                exported_presets.append(str(taip_export_path))
+            except OSError as exc:
+                warnings.append(f"Export du preset TAIP .aupreset échoué pour {input_path.name}: {exc}")
+
+    if j37_template is not None:
+        j37_params = decide_j37_params(file_analysis)
+        j37_preset = make_dynamic_j37_preset(f"refinr auto tape (J37) — {input_path.name}", j37_params, j37_template)
+        j37_reason = (
+            "Tape pilotée DYNAMIQUEMENT EN PARTIE (Waves Abbey Road J37 : Saturation/Noise/Wow/Flutter, voir "
+            f"j37_control.decide_params) à partir du diagnostic de ce fichier — paramètres : {j37_params}. "
+            "Speed/Bias/Formula/Modeled Tracks restent figés sur le preset de référence (pas de mapping "
+            "scalaire possible pour ces quatre-là, voir j37_control.py)."
+        )
+        dynamic_results[PluginRole.TAPE] = SelectionResult(preset=j37_preset, reason=j37_reason)
+
+        if export_eq_preset_dir is not None:
+            j37_export_path = Path(export_eq_preset_dir) / f"{input_path.stem}_J37.aupreset"
+            try:
+                write_aupreset(j37_preset, j37_export_path)
+                exported_presets.append(str(j37_export_path))
+            except OSError as exc:
+                warnings.append(f"Export du preset J37 .aupreset échoué pour {input_path.name}: {exc}")
+
+    chosen_extra_presets: list[tuple[PluginRole, SelectionResult]] = []  # saturation/tape, EQ traité à part
     for role in (PluginRole.SATURATION, PluginRole.TAPE):
-        result = selection[role]
+        result = dynamic_results.get(role) or selection.get(role)
+        if result is None:
+            continue
         if result.preset is None:
             warnings.append(f"Rôle '{role.value}' ignoré: {result.reason}")
             continue
@@ -559,21 +720,35 @@ def process_file(
             target_lufs=profile.target_lufs + correction_db,
             ceiling_dbtp=profile.true_peak_ceiling_dbtp,
         )
-        limited_buffer = loudness.limit_true_peak(leveled_buffer, ceiling_dbtp=profile.true_peak_ceiling_dbtp)
-        final_measurement = _measurement_to_dict(loudness.measure(limited_buffer))
-
         # Conforme la sortie au format de LIVRAISON du profil, pas au format
         # de la source : sans ça, un WAV source à 96kHz/32-bit resterait
         # 96kHz/32-bit en sortie même pour une plateforme qui attend du
         # 24-bit/44.1kHz.
-        delivery_buffer = resample_if_needed(limited_buffer, profile.output_sample_rate)
-        if attempt == 0 and delivery_buffer.sample_rate != limited_buffer.sample_rate:
+        #
+        # IMPORTANT : le rééchantillonnage se fait AVANT le limiteur, pas
+        # après. La conversion de fréquence d'échantillonnage (resample_poly)
+        # peut créer un dépassement inter-échantillon qui n'existait pas dans
+        # le signal source (ringing/overshoot classique de toute conversion
+        # de fréquence) — si on limitait AVANT de rééchantillonner, ce
+        # dépassement se retrouverait dans le fichier livré SANS avoir été vu
+        # par le limiteur. En rééchantillonnant d'abord, le détecteur de true
+        # peak suréchantillonné du limiteur (limit_true_peak) est la DERNIÈRE
+        # étape à toucher le signal à la fréquence réellement livrée : le
+        # respect du plafond est garanti par construction, pas seulement
+        # détecté a posteriori par le gate QC ci-dessous.
+        delivery_pre_limit = resample_if_needed(leveled_buffer, profile.output_sample_rate)
+        if attempt == 0 and delivery_pre_limit.sample_rate != leveled_buffer.sample_rate:
             warnings.append(
-                f"Rééchantillonné {limited_buffer.sample_rate}Hz -> {delivery_buffer.sample_rate}Hz "
-                f"pour correspondre au format de livraison du profil '{profile.key}'."
+                f"Rééchantillonné {leveled_buffer.sample_rate}Hz -> {delivery_pre_limit.sample_rate}Hz "
+                f"pour correspondre au format de livraison du profil '{profile.key}' (AVANT le limiteur final, "
+                "pour que le plafond de true peak soit garanti au format réellement livré)."
             )
+
+        limited_buffer = loudness.limit_true_peak(delivery_pre_limit, ceiling_dbtp=profile.true_peak_ceiling_dbtp)
+        final_measurement = _measurement_to_dict(loudness.measure(limited_buffer))
+
         actual_output_subtype = output_subtype or profile.output_bit_depth
-        save_wav(delivery_buffer, output_path, subtype=actual_output_subtype)
+        save_wav(limited_buffer, output_path, subtype=actual_output_subtype)
 
         # --- Gate de validation post-traitement ------------------------------
         # On ne fait PAS confiance au buffer en mémoire : on relit le fichier
@@ -602,7 +777,6 @@ def process_file(
 
         qc_errors, qc_warnings = _validate_output(
             output_analysis=output_analysis,
-            final_measurement=final_measurement,
             reference=reference,
             profile=profile,
             input_duration_sec=buffer.duration_seconds,

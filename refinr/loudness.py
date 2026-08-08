@@ -19,11 +19,36 @@ from scipy.signal import resample_poly
 
 from .audio_io import AudioBuffer
 
+# pyebur128 (libebur128, la même bibliothèque C que ffmpeg/VLC) donne une
+# implémentation de référence EBU R128 du calcul de LRA (gating à deux
+# étages : absolu -70 LUFS puis relatif, fenêtres 100ms) — voir
+# `measure_loudness_range`. Import optionnel : déjà une dépendance
+# facultative du projet (voir reference_loudness.py, même pattern de garde),
+# donc pas de nouvelle contrainte d'installation ; simple amélioration de
+# précision quand elle est disponible.
+try:
+    import pyebur128 as _ebur128
+
+    _PYEBUR128_AVAILABLE = True
+except ImportError:  # pragma: no cover - dégradation gracieuse si non installé
+    _ebur128 = None
+    _PYEBUR128_AVAILABLE = False
+
 # Cible par défaut de gain-staging avant la chaîne de plugins.
 DEFAULT_GAIN_STAGING_LUFS = -18.0
 
-# Facteur de suréchantillonnage pour l'estimation du true peak (BS.1770-4 Annexe 2).
-TRUE_PEAK_OVERSAMPLE = 4
+# Facteur de suréchantillonnage pour l'estimation du true peak ET pour le
+# calcul du gain de réduction du limiteur (limit_true_peak). BS.1770-4
+# Annexe 2 impose un MINIMUM de 4x pour la mesure ; on va nettement au-delà
+# (16x — le réglage qualité MAXIMALE proposé par les limiteurs de mastering
+# pro type FabFilter Pro-L2, au-dessus de leur défaut 4x/8x) pour deux
+# raisons : une estimation d'inter-sample peak aussi fine que possible, et
+# surtout un calcul de gain de réduction pratiquement exempt d'aliasing
+# (la multiplication d'enveloppe se fait à une cadence largement supérieure
+# au contenu audio). Traitement offline en batch (pas de contrainte temps
+# réel) : le coût CPU supplémentaire (resample_poly + boucle de release) est
+# négligeable ici — pas de compromis à faire.
+TRUE_PEAK_OVERSAMPLE = 16
 
 
 @dataclasses.dataclass
@@ -53,13 +78,35 @@ def measure_true_peak_dbtp(samples: np.ndarray, sample_rate: int) -> float:
     return 20.0 * np.log10(peak)
 
 
-def measure_loudness_range(samples: np.ndarray, sample_rate: int) -> float | None:
+def _measure_loudness_range_ebur128(samples: np.ndarray, sample_rate: int) -> float | None:
+    """LRA via libebur128 — gating à deux étages (absolu -70 LUFS puis
+    relatif -20LU sous la moyenne non-gatée), fenêtres 100ms conformes à
+    EBU Tech 3342. Retourne None si le signal est trop court/silencieux pour
+    un LRA fiable, ou si pyebur128 échoue pour toute autre raison (l'appelant
+    tombe alors sur l'approximation maison)."""
+    stereo = samples if samples.ndim > 1 else samples[:, None]
+    n_frames, n_channels = stereo.shape
+    if n_frames == 0:
+        return None
+    try:
+        interleaved = np.ascontiguousarray(stereo, dtype=np.float64).reshape(-1)
+        mode = _ebur128.MeasurementMode.MODE_I | _ebur128.MeasurementMode.MODE_LRA
+        state = _ebur128.R128State(n_channels, sample_rate, mode)
+        state.add_frames(interleaved, n_frames)
+        lra = _ebur128.get_loudness_range(state)
+    except Exception:  # pragma: no cover - dégradation gracieuse, voir docstring
+        return None
+    return float(lra) if np.isfinite(lra) else None
+
+
+def _measure_loudness_range_approx(samples: np.ndarray, sample_rate: int) -> float | None:
     """
     Estimation simplifiée de la loudness range (LRA) façon EBU R128 :
     percentile 95 - percentile 10 des mesures de loudness court-terme (3s),
     après gating relatif à -20 LU sous la loudness intégrée. Ce n'est pas une
-    implémentation certifiée EBU R128 complète, mais une approximation utile
-    pour le pilotage de la sélection de preset.
+    implémentation certifiée EBU R128 complète (pas de gate absolu -70 LUFS,
+    hop 1s au lieu de 100ms) — utilisée seulement en fallback quand
+    `pyebur128` n'est pas installé, voir `measure_loudness_range`.
     """
     mono = samples.mean(axis=1) if samples.ndim > 1 else samples
     win = int(3.0 * sample_rate)
@@ -88,6 +135,28 @@ def measure_loudness_range(samples: np.ndarray, sample_rate: int) -> float | Non
         gated = arr
     lo, hi = np.percentile(gated, [10, 95])
     return float(hi - lo)
+
+
+def measure_loudness_range(samples: np.ndarray, sample_rate: int) -> float | None:
+    """
+    Loudness Range (LRA). Utilise `pyebur128` (libebur128 — implémentation
+    de référence EBU R128, même bibliothèque C que ffmpeg/VLC) quand
+    disponible : gating à deux étages (absolu -70 LUFS puis relatif),
+    fenêtres 100ms conformes à EBU Tech 3342 — nettement plus précis que
+    l'approximation maison utilisée jusqu'ici. Retombe sur celle-ci
+    (`_measure_loudness_range_approx`) si `pyebur128` n'est pas installé, ou
+    si le calcul ebur128 échoue pour un signal trop court/silencieux.
+
+    Ce calcul est maintenant décisionnel (pas juste informatif) : il pilote
+    à la fois le déclenchement de la correction macro-dynamique
+    (`macro_dynamics.LRA_JARRING_THRESHOLD_LU`) et un avertissement QC — la
+    précision compte plus qu'avant.
+    """
+    if _PYEBUR128_AVAILABLE:
+        ebur_lra = _measure_loudness_range_ebur128(samples, sample_rate)
+        if ebur_lra is not None:
+            return ebur_lra
+    return _measure_loudness_range_approx(samples, sample_rate)
 
 
 def measure(buffer: AudioBuffer) -> LoudnessMeasurement:
@@ -146,19 +215,53 @@ def apply_gain_db(buffer: AudioBuffer, gain_db: float) -> AudioBuffer:
     )
 
 
+# Constantes de la release PROGRAM-DEPENDENT (voir limit_true_peak) — au lieu
+# d'un temps de release fixe, on interpole entre une release rapide
+# (récupération transparente après un pic isolé/bref) et une release lente
+# (évite le pompage audible quand la réduction est profonde et soutenue),
+# comme le font les limiteurs de mastering pro (FabFilter Pro-L2 "Punchy" /
+# iZotope Ozone Maximizer IRC : le temps de release s'adapte à la profondeur
+# de réduction récente, pas une seule constante pour tous les cas).
+LIMITER_FAST_RELEASE_MS = 30.0
+LIMITER_SLOW_RELEASE_MS = 400.0
+# Fenêtre de lissage utilisée pour évaluer "à quel point on limite fort en ce
+# moment" (moyenne glissante causale de la profondeur de réduction, en dB).
+LIMITER_REDUCTION_TRACKING_MS = 300.0
+# Profondeur de réduction (dB) au-delà de laquelle la release est à sa valeur
+# la plus lente (LIMITER_SLOW_RELEASE_MS) ; en dessous, interpolation linéaire
+# depuis LIMITER_FAST_RELEASE_MS à 0dB de réduction.
+LIMITER_REDUCTION_DEPTH_REF_DB = 6.0
+
+
 def limit_true_peak(
     buffer: AudioBuffer,
     ceiling_dbtp: float = -1.0,
     lookahead_ms: float = 5.0,
-    release_ms: float = 60.0,
+    fast_release_ms: float = LIMITER_FAST_RELEASE_MS,
+    slow_release_ms: float = LIMITER_SLOW_RELEASE_MS,
 ) -> AudioBuffer:
     """
-    Limiteur "brickwall" simple à lookahead, gain lié stéréo (même gain
-    appliqué à tous les canaux pour préserver l'image stéréo), pour garantir
-    le plafond de true peak du profil de destination en fin de chaîne.
+    Limiteur "brickwall" à lookahead ET release PROGRAM-DEPENDENT, gain lié
+    stéréo (même gain appliqué à tous les canaux pour préserver l'image
+    stéréo), pour garantir le plafond de true peak du profil de destination
+    en fin de chaîne.
 
-    Ce n'est pas un remplacement d'un vrai limiter mastering (pas de
-    ISP-lookahead multi-bande, pas de saturation contrôlée), c'est un
+    Attaque : instantanée dès que le lookahead détecte un dépassement (comme
+    avant) — c'est ce qui garantit le respect du plafond, la release ne joue
+    aucun rôle dans cette garantie.
+
+    Release : ADAPTATIVE plutôt qu'un temps fixe. On suit la profondeur de
+    réduction récente (moyenne glissante causale sur
+    `LIMITER_REDUCTION_TRACKING_MS`) et on interpole le temps de release
+    entre `fast_release_ms` (réduction faible/brève — récupération rapide et
+    transparente sur un pic isolé) et `slow_release_ms` (réduction profonde/
+    soutenue — release lente pour éviter le pompage audible qu'une remontée
+    de gain trop rapide provoquerait sur du matériel déjà fortement limité).
+    Principe standard des limiteurs de mastering pro (FabFilter Pro-L2,
+    iZotope Ozone Maximizer), absent d'un simple limiteur à release fixe.
+
+    Ce n'est pas un remplacement d'un vrai limiter mastering multi-bande
+    (pas de séparation par bande, pas de saturation contrôlée), c'est le
     filet de sécurité final après la chaîne de plugins AU. Si tu préfères,
     tu peux le désactiver et faire le leveling final uniquement via un de
     tes plugins AU (ex: si tu ajoutes un limiter à ta bibliothèque de
@@ -177,19 +280,40 @@ def limit_true_peak(
 
     lookahead_samples = max(1, int(lookahead_ms * 1e-3 * buffer.sample_rate * TRUE_PEAK_OVERSAMPLE))
     from scipy.ndimage import minimum_filter1d
+    from scipy.signal import lfilter
 
     # Lookahead : la réduction de gain doit commencer AVANT le pic -> fenêtre
-    # glissante vers l'avant (origin négatif = regarde vers le futur).
+    # glissante vers l'avant (origin négatif = regarde vers le futur). Ceci
+    # fixe la garantie de plafond, indépendamment de la release ci-dessous.
     origin = -(lookahead_samples // 2) if lookahead_samples % 2 else -(lookahead_samples // 2 - 1)
     gain_env = minimum_filter1d(needed_gain, size=lookahead_samples, origin=origin, mode="nearest")
 
-    # Lissage release (la remontée de gain vers 1.0 est progressive ; la
-    # descente, elle, doit rester instantanée pour ne pas laisser passer de pic).
-    release_coeff = np.exp(-1.0 / (release_ms * 1e-3 * buffer.sample_rate * TRUE_PEAK_OVERSAMPLE))
+    # --- Release program-dependent -----------------------------------------
+    # 1) Profondeur de réduction instantanée (dB, >=0, 0 = pas de réduction).
+    reduction_db = -20.0 * np.log10(np.clip(gain_env, 1e-6, 1.0))
+
+    # 2) Moyenne glissante CAUSALE (filtre passe-bas 1 pôle) de cette
+    # profondeur, sur une fenêtre de LIMITER_REDUCTION_TRACKING_MS — "à quel
+    # point on limite fort EN CE MOMENT", pas juste sur l'échantillon courant.
+    tracking_coeff = np.exp(-1.0 / (LIMITER_REDUCTION_TRACKING_MS * 1e-3 * buffer.sample_rate * TRUE_PEAK_OVERSAMPLE))
+    avg_reduction_db = lfilter([1.0 - tracking_coeff], [1.0, -tracking_coeff], reduction_db)
+
+    # 3) Temps de release interpolé par échantillon selon cette profondeur
+    # moyenne, borné à [fast_release_ms, slow_release_ms].
+    depth_fraction = np.clip(avg_reduction_db / LIMITER_REDUCTION_DEPTH_REF_DB, 0.0, 1.0)
+    release_ms_per_sample = fast_release_ms + (slow_release_ms - fast_release_ms) * depth_fraction
+    release_coeff_per_sample = np.exp(-1.0 / (release_ms_per_sample * 1e-3 * buffer.sample_rate * TRUE_PEAK_OVERSAMPLE))
+
+    # 4) Lissage du gain lui-même : attaque instantanée (descente = valeur
+    # cible directement, jamais retardée), release au coefficient variable
+    # calculé ci-dessus. `current` reste toujours <= gain_env pendant la
+    # release (convergence par en-dessous) : la garantie de plafond du
+    # lookahead n'est jamais compromise par une release plus lente.
     smoothed = np.empty_like(gain_env)
     current = 1.0
     for i, g in enumerate(gain_env):
-        current = g if g < current else release_coeff * current + (1 - release_coeff) * g
+        coeff = release_coeff_per_sample[i]
+        current = g if g < current else coeff * current + (1 - coeff) * g
         smoothed[i] = current
 
     # Retour à la fréquence d'échantillonnage d'origine.

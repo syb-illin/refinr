@@ -234,6 +234,19 @@ AudioToolbox.AudioUnitSetProperty.argtypes = [
     ctypes.c_uint32,
 ]
 
+# AudioUnitGetProperty (utilisé pour lire kAudioUnitProperty_Latency, voir
+# _instantiate_au / la compensation de délai plus bas) — signature distincte
+# de Set : ioDataSize est un POINTEUR (in/out), pas une valeur simple.
+AudioToolbox.AudioUnitGetProperty.restype = ctypes.c_int32
+AudioToolbox.AudioUnitGetProperty.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_uint32,
+    ctypes.c_uint32,
+    ctypes.c_uint32,
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_uint32),
+]
+
 AudioToolbox.AudioUnitRender.restype = ctypes.c_int32
 AudioToolbox.AudioUnitRender.argtypes = [
     ctypes.c_void_p,
@@ -316,6 +329,41 @@ class _SourceFeeder:
 class _LoadedAU:
     instance: ctypes.c_void_p
     preset_name: str
+    latency_seconds: float = 0.0
+
+
+def _query_latency_seconds(instance: ctypes.c_void_p, preset_name: str) -> float:
+    """
+    Lit `kAudioUnitProperty_Latency` (délai algorithmique du plugin, en
+    secondes — lookahead d'un limiteur/désesseur, groupe de retard d'un EQ
+    linear-phase, etc.) APRÈS `AudioUnitInitialize` (la valeur n'est fiable
+    qu'une fois le plugin initialisé avec son stream format final).
+
+    Sans compensation de ce délai (PDC — "plugin delay compensation", ce que
+    fait automatiquement tout host pro type Logic/Pro Tools), le signal en
+    sortie de CHAQUE étage de la chaîne serait décalé vers l'avant de ce
+    montant, et l'effet se cumule sur toute la chaîne (EQ -> saturation ->
+    tape) — silence de tête artificiel, désynchronisation par rapport à la
+    source. Voir le trim appliqué dans `_process_single_au`.
+
+    Dégradation gracieuse à 0.0 si la propriété n'est pas lisible (certains
+    plugins ne l'exposent pas correctement) : pas pire que le comportement
+    d'avant l'introduction de la PDC, jamais une erreur bloquante pour ça.
+    """
+    latency_value = ctypes.c_double(0.0)
+    latency_size = ctypes.c_uint32(ctypes.sizeof(latency_value))
+    status = AudioToolbox.AudioUnitGetProperty(
+        instance,
+        kAudioUnitProperty_Latency,
+        kAudioUnitScope_Global,
+        0,
+        ctypes.byref(latency_value),
+        ctypes.byref(latency_size),
+    )
+    if status != 0:
+        return 0.0
+    value = float(latency_value.value)
+    return value if value > 0.0 and np.isfinite(value) else 0.0
 
 
 def _instantiate_au(preset: PluginPreset, sample_rate: float) -> _LoadedAU:
@@ -391,7 +439,9 @@ def _instantiate_au(preset: PluginPreset, sample_rate: float) -> _LoadedAU:
 
     _check(AudioToolbox.AudioUnitInitialize(instance), f"AudioUnitInitialize({preset.name!r})")
 
-    return _LoadedAU(instance=instance, preset_name=preset.name)
+    latency_seconds = _query_latency_seconds(instance, preset.name)
+
+    return _LoadedAU(instance=instance, preset_name=preset.name, latency_seconds=latency_seconds)
 
 
 def _dispose_au(au: _LoadedAU) -> None:
@@ -401,8 +451,10 @@ def _dispose_au(au: _LoadedAU) -> None:
 
 def _process_single_au(
     preset: PluginPreset, left: np.ndarray, right: np.ndarray, sample_rate: float
-) -> tuple[np.ndarray, np.ndarray]:
-    """Fait passer un buffer stéréo (2 tableaux mono float32) à travers un seul AU."""
+) -> tuple[np.ndarray, np.ndarray, int]:
+    """Fait passer un buffer stéréo (2 tableaux mono float32) à travers un
+    seul AU. Retourne (left, right, latency_samples_compensés) — voir la PDC
+    appliquée juste avant le `return` ci-dessous."""
     tail_frames = int(TAIL_SECONDS * sample_rate)
     feeder = _SourceFeeder(left, right, tail_frames)
 
@@ -463,7 +515,23 @@ def _process_single_au(
             position += chunk
             sample_time += chunk
 
-        return out_left, out_right
+        # --- PDC (plugin delay compensation) ---------------------------------
+        # `au.latency_seconds` (kAudioUnitProperty_Latency, lu juste après
+        # AudioUnitInitialize — voir _query_latency_seconds) est le délai
+        # algorithmique introduit par CE plugin. Sans compensation, les
+        # `latency_samples` premiers échantillons de sortie sont du
+        # pré-silence/pré-ring dû au plugin, pas du vrai signal — on les
+        # retire pour réaligner la sortie sur l'entrée, exactement ce que
+        # fait la PDC automatique de tout host pro (Logic, Pro Tools). Le
+        # `TAIL_SECONDS` généreux (1s, largement > toute latence de plugin de
+        # mastering réaliste) absorbe cette perte côté fin de buffer sans
+        # jamais couper de vrai signal.
+        latency_samples = int(round(au.latency_seconds * sample_rate))
+        if latency_samples > 0:
+            out_left = out_left[latency_samples:]
+            out_right = out_right[latency_samples:]
+
+        return out_left, out_right, latency_samples
     finally:
         _dispose_au(au)
 
@@ -471,6 +539,7 @@ def _process_single_au(
 @dataclasses.dataclass
 class RenderResult:
     frames_rendered: int
+    latency_compensated_samples: int = 0  # somme des délais PDC retirés sur toute la chaîne (voir _process_single_au)
 
 
 def process_chain_offline(
@@ -480,14 +549,21 @@ def process_chain_offline(
     Fait passer `buffer` (déjà gain-stagé) à travers la chaîne d'Audio Units
     donnée, dans l'ordre, chacun en pull via AURenderCallback (offline,
     aucune dépendance à un device de sortie). Chaque AU ajoute jusqu'à
-    `TAIL_SECONDS` de flush de queue au signal.
+    `TAIL_SECONDS` de flush de queue au signal, et sa PDC (plugin delay
+    compensation, voir `_process_single_au`) est appliquée avant de passer
+    au plugin suivant — sans quoi le délai algorithmique de chaque étage se
+    cumulerait sur toute la chaîne (silence de tête artificiel croissant).
     """
     stereo = buffer.as_stereo()
     left, right = stereo[:, 0].copy(), stereo[:, 1].copy()
 
+    total_latency_samples = 0
     for preset in presets_in_order:
-        left, right = _process_single_au(preset, left, right, buffer.sample_rate)
+        left, right, latency_samples = _process_single_au(preset, left, right, buffer.sample_rate)
+        total_latency_samples += latency_samples
 
     out_samples = np.stack([left, right], axis=1).astype(np.float32)
     out_buffer = AudioBuffer(samples=out_samples, sample_rate=buffer.sample_rate, source_path=buffer.source_path)
-    return out_buffer, RenderResult(frames_rendered=out_samples.shape[0])
+    return out_buffer, RenderResult(
+        frames_rendered=out_samples.shape[0], latency_compensated_samples=total_latency_samples
+    )

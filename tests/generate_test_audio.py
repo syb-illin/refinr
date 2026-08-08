@@ -52,6 +52,24 @@ def make_bright(duration_s: float = 6.0) -> np.ndarray:
     return np.stack([mono, mono], axis=1).astype(np.float32)
 
 
+def make_suno_artifact_like(duration_s: float = 6.0) -> np.ndarray:
+    """
+    Signal synthétique avec énergie concentrée dans les deux bandes KB
+    documentées comme artefacts Suno (metallic_4k: 3.5-5kHz, hf_fizz_14k:
+    14-20kHz), en plus d'un fondamental grave pour rester un signal "normal"
+    par ailleurs. Amplitudes (220Hz/0.2, 4200Hz/0.4, 16500Hz/0.8) calibrées
+    empiriquement pour placer les DEUX bandes nettement au-dessus de
+    `analysis.KB_BAND_ELEVATED_THRESHOLD_DB` (3.0dB) — voir
+    `refinr.analysis._band_density_relative_db`. Sert à tester le
+    déclenchement MESURÉ (pas a priori) de `proq4_control.decide_bands` en
+    `suno_mode=True`, par opposition à `make_bright()` (une seule bande
+    élevée) et `make_calm_dynamic()` (aucune bande élevée).
+    """
+    mono = _tone_mix(duration_s, [(220, 0.2), (4200, 0.4), (16500, 0.8)])
+    mono = (mono / np.max(np.abs(mono)) * 0.7).astype(np.float32)
+    return np.stack([mono, mono], axis=1).astype(np.float32)
+
+
 def make_dark(duration_s: float = 6.0) -> np.ndarray:
     mono = _tone_mix(duration_s, [(80, 0.4), (160, 0.3), (300, 0.2)])
     mono = (mono / np.max(np.abs(mono)) * 0.7).astype(np.float32)

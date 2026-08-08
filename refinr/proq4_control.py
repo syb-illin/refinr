@@ -24,7 +24,7 @@ import dataclasses
 import math
 import struct
 
-from .analysis import FileAnalysis
+from .analysis import AI_SCORE_BAND_SPAN_DB, KB_BAND_ELEVATED_THRESHOLD_DB, FileAnalysis
 from .preset_types import PluginPreset
 
 # --------------------------------------------------------------------------
@@ -53,6 +53,14 @@ STEREO_ENUM = {
 
 BAND_FLOATS = 23
 N_BANDS = 24
+
+# Coupe MAXIMALE (dB) des deux corrections suno_mode, atteinte quand l'excès
+# mesuré au-delà de KB_BAND_ELEVATED_THRESHOLD_DB couvre AI_SCORE_BAND_SPAN_DB
+# (même span que le calcul de ai_score dans analysis.py, pour rester cohérent
+# à travers le projet) — en dessous, la coupe est proportionnellement plus
+# faible, voir decide_bands.
+SUNO_FIZZ_MAX_CUT_DB = 2.5
+SUNO_METALLIC_MAX_CUT_DB = 2.5
 
 # Bande "désactivée" par défaut (capturée sur une vraie bande inutilisée de
 # Pro-Q4). On part de ce template pour chaque bande, actives ou non — seuls
@@ -278,16 +286,23 @@ def decide_bands(analysis: FileAnalysis, suno_mode: bool = False) -> list[Band]:
         en bas du spectre sur les sources très larges).
 
     `suno_mode=True` (opt-in explicite, JAMAIS activé automatiquement par
-    l'analyse) ajoute deux corrections supplémentaires spécifiques aux
-    artefacts connus des générateurs IA type Suno — voir
-    `config/suno_artifacts_kb.md` pour les sources et le détail :
+    l'analyse) active deux corrections supplémentaires ciblant les artefacts
+    connus des générateurs IA type Suno — voir `config/suno_artifacts_kb.md`
+    pour les sources et le détail :
       - Shelf HF à 14kHz pour le bruit de synthèse/fizz caractéristique du
-        codec de génération.
+        codec de génération (bande `hf_fizz_14k`, 14-20kHz).
       - Bell à 4kHz pour le "buzz" métallique/robotique typique des
-        formants vocaux synthétiques Suno (zone 3.5-5kHz rapportée).
-    Ces deux corrections ne sont PAS déduites d'une mesure faite sur ce
-    fichier précis (contrairement au reste de cette fonction) mais d'une
-    connaissance a priori sur la source — d'où l'opt-in strict.
+        formants vocaux synthétiques Suno (bande `metallic_4k`, 3.5-5kHz).
+    Contrairement aux premières versions de cette fonction, ces deux
+    corrections ne sont PLUS appliquées à l'aveugle dès que `suno_mode=True` :
+    chacune est gatée sur la densité RÉELLEMENT mesurée sur CE fichier
+    (`analysis.spectral.kb_band_density_db`, déjà calculée par `analysis.py`
+    précisément pour ça) contre le même seuil que celui qui déclenche les
+    tags `kb_*_elevated` (`KB_BAND_ELEVATED_THRESHOLD_DB`). `suno_mode`
+    autorise la correction ; la mesure décide si elle s'applique et avec
+    quelle intensité (gain proportionnel à l'excès mesuré au-delà du seuil,
+    même principe que le High Shelf de tilt ci-dessus) — un fichier Suno qui
+    ne montre pas l'artefact ne reçoit pas la correction correspondante.
     """
     bands: list[Band] = []
 
@@ -379,35 +394,47 @@ def decide_bands(analysis: FileAnalysis, suno_mode: bool = False) -> list[Band]:
         )
 
     if suno_mode:
-        bands.append(
-            Band(
-                freq_hz=14000.0,
-                gain_db=-2.5,
-                shape="high_shelf",
-                stereo="stereo",
-                reason=(
-                    "Mode Suno/IA activé (config/suno_artifacts_kb.md, section 2) : les générateurs "
-                    "IA jettent le détail HF au-delà d'~14kHz et le remplacent par du bruit de "
-                    "synthèse ('fizz'), source de fatigue d'écoute. Correction a priori (pas déduite "
-                    "de l'analyse de ce fichier) : High Shelf 14kHz -2.5dB."
-                ),
+        fizz_density = analysis.spectral.kb_band_density_db.get("hf_fizz_14k")
+        if fizz_density is not None and fizz_density > KB_BAND_ELEVATED_THRESHOLD_DB:
+            excess = fizz_density - KB_BAND_ELEVATED_THRESHOLD_DB
+            fraction = min(excess / AI_SCORE_BAND_SPAN_DB, 1.0)
+            shelf_gain = round(-SUNO_FIZZ_MAX_CUT_DB * fraction, 2)
+            bands.append(
+                Band(
+                    freq_hz=14000.0,
+                    gain_db=shelf_gain,
+                    shape="high_shelf",
+                    stereo="stereo",
+                    reason=(
+                        f"Mode Suno/IA activé ET densité HF mesurée sur CE fichier à {fizz_density:+.1f}dB "
+                        f"dans la bande 14-20kHz (seuil >{KB_BAND_ELEVATED_THRESHOLD_DB:.1f}dB — voir "
+                        "config/suno_artifacts_kb.md, section 2 : bruit de synthèse/fizz HF typique des "
+                        f"générateurs IA). Correction : High Shelf 14kHz {shelf_gain:+.2f}dB, proportionnelle "
+                        "à l'excès mesuré (pas une coupe a priori)."
+                    ),
+                )
             )
-        )
-        bands.append(
-            Band(
-                freq_hz=4000.0,
-                gain_db=-2.5,
-                q=0.7,
-                shape="bell",
-                stereo="stereo",
-                reason=(
-                    "Mode Suno/IA activé (config/suno_artifacts_kb.md, section 3) : formants vocaux "
-                    "synthétiques statiques dans la zone 3.5-5kHz, perçus comme un buzz "
-                    "métallique/robotique typique de Suno. Correction a priori sur le mix entier "
-                    "(pas de séparation vocale disponible) : Bell 4kHz -2.5dB, Q large (0.7) pour "
-                    "rester modéré sur les autres éléments présents dans cette zone."
-                ),
+
+        metallic_density = analysis.spectral.kb_band_density_db.get("metallic_4k")
+        if metallic_density is not None and metallic_density > KB_BAND_ELEVATED_THRESHOLD_DB:
+            excess = metallic_density - KB_BAND_ELEVATED_THRESHOLD_DB
+            fraction = min(excess / AI_SCORE_BAND_SPAN_DB, 1.0)
+            bell_gain = round(-SUNO_METALLIC_MAX_CUT_DB * fraction, 2)
+            bands.append(
+                Band(
+                    freq_hz=4000.0,
+                    gain_db=bell_gain,
+                    q=0.7,
+                    shape="bell",
+                    stereo="stereo",
+                    reason=(
+                        f"Mode Suno/IA activé ET densité mesurée sur CE fichier à {metallic_density:+.1f}dB "
+                        f"dans la bande 3.5-5kHz (seuil >{KB_BAND_ELEVATED_THRESHOLD_DB:.1f}dB — voir "
+                        "config/suno_artifacts_kb.md, section 3 : formants vocaux synthétiques/buzz "
+                        f"métallique). Correction : Bell 4kHz {bell_gain:+.2f}dB, Q large (0.7), "
+                        "proportionnelle à l'excès mesuré (pas une coupe a priori)."
+                    ),
+                )
             )
-        )
 
     return bands

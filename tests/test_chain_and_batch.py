@@ -9,6 +9,7 @@ mesures cohérentes.
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -70,6 +71,11 @@ def test_process_file_resamples_output_to_profile_delivery_rate(tmp_path):
 
 
 def test_process_file_exports_aupreset_when_requested(tmp_path):
+    """La bibliothèque de presets réelle (config/presets) contient un preset
+    TAIP de référence (taip_suno_tuned.aupreset) et un preset J37 de référence
+    (j37_baseline_reference.aupreset) : saturation ET tape sont donc pilotées
+    dynamiquement (voir chain._find_taip_template / _find_j37_template) et
+    exportées en plus de l'EQ Pro-Q4 — trois .aupreset attendus."""
     catalog = load_profiles(PROFILES_PATH)
     library = PresetLibrary.load(PRESETS_ROOT)
     profile = catalog.get("spotify")
@@ -85,10 +91,15 @@ def test_process_file_exports_aupreset_when_requested(tmp_path):
         export_eq_preset_dir=export_dir,
     )
 
-    assert len(report.exported_presets) == 1
-    exported_path = Path(report.exported_presets[0])
-    assert exported_path.exists()
-    assert exported_path.parent == export_dir
+    assert len(report.exported_presets) == 3
+    exported_names = {Path(p).name for p in report.exported_presets}
+    assert any(name.endswith("_ProQ4.aupreset") for name in exported_names)
+    assert any(name.endswith("_TAIP.aupreset") for name in exported_names)
+    assert any(name.endswith("_J37.aupreset") for name in exported_names)
+    for exported in report.exported_presets:
+        exported_path = Path(exported)
+        assert exported_path.exists()
+        assert exported_path.parent == export_dir
 
 
 def test_process_file_suno_mode_flag_propagates_to_report(tmp_path):
@@ -144,59 +155,49 @@ def _test_profile(true_peak_ceiling_dbtp: float = -1.0, target_lufs: float = -14
     )
 
 
+def _analysis_with_loudness(analysis, integrated_lufs: float, true_peak_dbtp: float):
+    """_validate_output lit désormais le true peak/LUFS directement depuis
+    `output_analysis.loudness` (mesuré sur le fichier réellement écrit), plus
+    depuis un dict `final_measurement` séparé — voir chain.py. On construit
+    donc ici une FileAnalysis avec la loudness voulue plutôt que d'injecter
+    un dict à côté."""
+    loudness = dataclasses.replace(analysis.loudness, integrated_lufs=integrated_lufs, true_peak_dbtp=true_peak_dbtp)
+    return dataclasses.replace(analysis, loudness=loudness)
+
+
 def test_validate_output_fails_on_true_peak_violation():
     analysis, dur = _clean_analysis_and_duration()
     profile = _test_profile(true_peak_ceiling_dbtp=-1.0)
-    final_measurement = {
-        "integrated_lufs": -14.0,
-        "true_peak_dbtp": 0.5,
-        "loudness_range_lu": None,
-        "sample_peak_dbfs": 0.4,
-    }
+    analysis = _analysis_with_loudness(analysis, integrated_lufs=-14.0, true_peak_dbtp=0.5)
 
-    errors, _warns = _validate_output(analysis, final_measurement, None, profile, dur, dur)
+    errors, _warns = _validate_output(analysis, None, profile, dur, dur)
     assert any("True peak" in e for e in errors)
 
 
 def test_validate_output_fails_on_lufs_drift():
     analysis, dur = _clean_analysis_and_duration()
     profile = _test_profile(target_lufs=-14.0)
-    final_measurement = {
-        "integrated_lufs": -20.0,
-        "true_peak_dbtp": -3.0,
-        "loudness_range_lu": None,
-        "sample_peak_dbfs": -3.0,
-    }
+    analysis = _analysis_with_loudness(analysis, integrated_lufs=-20.0, true_peak_dbtp=-3.0)
 
-    errors, _warns = _validate_output(analysis, final_measurement, None, profile, dur, dur)
+    errors, _warns = _validate_output(analysis, None, profile, dur, dur)
     assert any("Loudness" in e for e in errors)
 
 
 def test_validate_output_fails_on_truncated_duration():
     analysis, dur = _clean_analysis_and_duration()
     profile = _test_profile()
-    final_measurement = {
-        "integrated_lufs": -14.0,
-        "true_peak_dbtp": -3.0,
-        "loudness_range_lu": None,
-        "sample_peak_dbfs": -3.0,
-    }
+    analysis = _analysis_with_loudness(analysis, integrated_lufs=-14.0, true_peak_dbtp=-3.0)
 
-    errors, _warns = _validate_output(analysis, final_measurement, None, profile, dur, dur - 1.0)
+    errors, _warns = _validate_output(analysis, None, profile, dur, dur - 1.0)
     assert any("courte" in e for e in errors)
 
 
 def test_validate_output_passes_on_compliant_output():
     analysis, dur = _clean_analysis_and_duration()
     profile = _test_profile()
-    final_measurement = {
-        "integrated_lufs": -14.0,
-        "true_peak_dbtp": -2.0,
-        "loudness_range_lu": None,
-        "sample_peak_dbfs": -3.0,
-    }
+    analysis = _analysis_with_loudness(analysis, integrated_lufs=-14.0, true_peak_dbtp=-2.0)
 
-    errors, _warns = _validate_output(analysis, final_measurement, None, profile, dur, dur)
+    errors, _warns = _validate_output(analysis, None, profile, dur, dur)
     assert errors == []
 
 

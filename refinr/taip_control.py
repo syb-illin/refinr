@@ -65,17 +65,20 @@ _DEFAULT_PARAMS: dict[str, float] = {
     "wear": 0.0,
 }
 
-# Bornes raisonnables observées/déduites du seul preset réel dispo — évite
-# de générer des valeurs aberrantes tant qu'on n'a pas plus de presets de
-# référence pour confirmer les plages exactes de chaque contrôle.
+# Bornes CONFIRMÉES par reverse-engineering direct — deux presets Logic Pro
+# ("all max.aupreset" / "all min.aupreset", les 7 contrôles de caractère
+# poussés à fond dans chaque sens) lus via `parse_taip_params`, voir
+# taip_parameter_reference.md. Drive, Hi-Shape et Lo-Shape sont BIPOLAIRES
+# (centrés sur 0, contrairement à l'hypothèse initiale 0..max) ; Glue, Wear,
+# Noise et Presence sont unipolaires 0..100.
 _PARAM_BOUNDS: dict[str, tuple[float, float]] = {
-    "drive": (0.0, 10.0),
-    "glue": (0.0, 20.0),
-    "wear": (0.0, 30.0),
-    "noise": (0.0, 15.0),
-    "presence": (0.0, 20.0),
-    "hi_shape": (0.0, 10.0),
-    "lo_shape": (0.0, 10.0),
+    "drive": (-40.0, 40.0),
+    "glue": (0.0, 100.0),
+    "wear": (0.0, 100.0),
+    "noise": (0.0, 100.0),
+    "presence": (0.0, 100.0),
+    "hi_shape": (-100.0, 100.0),
+    "lo_shape": (-100.0, 100.0),
 }
 
 _PARAM_RE = re.compile(r'<PARAM\s+id="([^"]+)"\s+value="([^"]+)"\s*/>')

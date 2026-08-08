@@ -31,7 +31,8 @@ from .audio_io import AudioBuffer
 # (facteur 1.0), quel que soit le facteur de largeur appliqué au-dessus —
 # évite qu'un resserrement/élargissement HF ne s'accompagne d'un
 # déséquilibre de phase basse fréquence, la zone la plus critique pour la
-# compatibilité mono (voir aussi le futur mono fold-down check, backlog).
+# compatibilité mono (voir aussi integrity.check_integrity: mono_fold_issue,
+# le gate QC qui vérifie que le fichier FINAL reste compatible mono).
 MONO_SAFE_CROSSOVER_HZ = 150.0
 
 # Seuils de corrélation stéréo (dynamics.stereo_correlation, -1..1) —
