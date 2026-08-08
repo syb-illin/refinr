@@ -3,6 +3,10 @@ numpy>=1.26
 scipy>=1.11
 soundfile>=0.12
 pyloudnorm>=0.1.1
+pyebur128>=0.1.7      # bindings de libebur128 (ref. C utilisée par ffmpeg/VLC) —
+                       # contre-vérification indépendante du LUFS/true-peak au
+                       # gate QC final (refinr/reference_loudness.py), distincte
+                       # de la mesure pyloudnorm utilisée dans le reste du pipeline
 PyYAML>=6.0
 jinja2>=3.1          # rendu des rapports HTML
 pytest>=8.0           # utilisé par build_and_package.sh avant chaque build
@@ -21,6 +25,8 @@ pyobjc-core>=10.1; sys_platform == "darwin"
 pyobjc-framework-Cocoa>=10.1; sys_platform == "darwin"
 
 PyQt6>=6.6; sys_platform == "darwin"
+# Le module PyQt6.QtMultimedia (lecteur A/B brut/raffiné, gui/analyzer_widgets.py)
+# est inclus dans le paquet PyQt6 standard, pas de dépendance séparée requise.
 
 # --- Packaging en .app (macOS uniquement) ---
 py2app>=0.28; sys_platform == "darwin"

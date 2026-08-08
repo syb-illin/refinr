@@ -16,8 +16,11 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from refinr.analysis import analyze  # noqa: E402
+from refinr.audio_io import load_wav  # noqa: E402
 from refinr.batch import BatchResult, run_batch  # noqa: E402
 from refinr.report import write_reports  # noqa: E402
+from refinr.spectrum import compute_correlation_timeline, compute_goniometer_points, compute_spectrum_db  # noqa: E402
 
 
 class BatchWorker(QThread):
@@ -35,6 +38,7 @@ class BatchWorker(QThread):
         max_workers: int,
         suno_mode: bool = False,
         export_eq_presets: bool = False,
+        custom_profile: dict | None = None,
     ):
         super().__init__()
         self.input_paths = input_paths
@@ -45,6 +49,7 @@ class BatchWorker(QThread):
         self.max_workers = max_workers
         self.suno_mode = suno_mode
         self.export_eq_presets = export_eq_presets
+        self.custom_profile = custom_profile
 
     def run(self) -> None:
         try:
@@ -67,8 +72,52 @@ class BatchWorker(QThread):
                 on_progress=_on_progress,
                 suno_mode=self.suno_mode,
                 export_eq_presets=self.export_eq_presets,
+                custom_profile=self.custom_profile,
             )
             report_paths = write_reports(result, self.output_dir, self.profile_key)
             self.finished_ok.emit(result, report_paths)
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(str(exc))
+
+
+class RefinedAnalysisWorker(QThread):
+    """
+    Recharge chaque WAV de sortie d'un batch pour calculer les données du
+    panneau d'analyse "raffiné" (courbe spectrale, goniomètre, corrélation,
+    LUFS) — dans un QThread séparé plutôt que dans `_on_batch_finished`
+    directement, pour ne pas geler l'UI en rechargeant/analysant chaque
+    fichier de sortie un par un sur le thread principal (notable sur un
+    batch de plusieurs dizaines de fichiers).
+    """
+
+    file_analyzed = pyqtSignal(
+        str, dict
+    )  # input_path, {"spectrum":..., "goniometer":..., "correlation":..., "lufs":...}
+    finished_all = pyqtSignal()
+
+    def __init__(self, outcomes: list):
+        super().__init__()
+        self.outcomes = outcomes  # list[BatchFileOutcome], réussis uniquement (filtré par l'appelant)
+
+    def run(self) -> None:
+        for outcome in self.outcomes:
+            if outcome.report is None:
+                continue
+            try:
+                output_buffer = load_wav(outcome.report.output_path)
+            except OSError:
+                continue
+            refined_analysis = analyze(output_buffer)
+            data = {
+                "output_path": outcome.report.output_path,
+                "buffer": output_buffer,  # gardé pour l'analyse "live" pendant la lecture A/B
+                "spectrum": compute_spectrum_db(output_buffer),
+                "goniometer": compute_goniometer_points(output_buffer),
+                "stereo_timeline": compute_correlation_timeline(output_buffer),
+                "correlation": refined_analysis.dynamics.stereo_correlation,
+                "lufs": refined_analysis.loudness.integrated_lufs,
+                "ai_score": outcome.report.output_diagnostic.get("ai_score"),
+                "qc_passed": outcome.report.qc_passed,
+            }
+            self.file_analyzed.emit(outcome.input_path, data)
+        self.finished_all.emit()

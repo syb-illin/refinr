@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .chain import FileProcessingReport, process_file
 from .preset_mapping import PresetLibrary
-from .profiles import ProfileCatalog
+from .profiles import DestinationProfile, ProfileCatalog
 
 
 @dataclasses.dataclass
@@ -46,20 +46,46 @@ def _process_one(
     presets_root: str,
     profile_key: str,
     profiles_path: str,
-    output_subtype: str,
+    output_subtype: str | None = None,
     suno_mode: bool = False,
     export_eq_preset_dir: str | None = None,
+    custom_profile: dict | None = None,
 ) -> BatchFileOutcome:
     """
     Fonction exécutée dans un process worker séparé : recharge la bibliothèque
     de presets et le catalogue de profils localement (plus simple/robuste à
     pickler que de repasser les objets complexes d'un process à l'autre),
     puis traite un seul fichier.
+
+    `custom_profile`, si fourni (`{"target_lufs": float, "true_peak_ceiling_dbtp":
+    float, "output_sample_rate": int (optionnel), "output_bit_depth": str (optionnel)}`),
+    REMPLACE le profil chargé depuis `profiles_path` par des cibles définies
+    manuellement dans la GUI (sliders "Mastering Targets" / "Custom Targets",
+    y compris sample rate/bit depth de livraison) — pratique pour une cible
+    non couverte par les profils YAML prédéfinis. `profile_key` est alors
+    ignoré pour la résolution du profil, mais reste utilisé pour nommer le
+    fichier de sortie. `output_sample_rate`/`output_bit_depth` absents ->
+    défauts `DestinationProfile` (44100Hz / PCM_24).
     """
     try:
         library = PresetLibrary.load(presets_root)
         catalog = ProfileCatalog_load(profiles_path)
-        profile = catalog.get(profile_key)
+        if custom_profile is not None:
+            profile_kwargs = {
+                "key": "custom",
+                "label": "Cibles personnalisées",
+                "target_lufs": float(custom_profile["target_lufs"]),
+                "true_peak_ceiling_dbtp": float(custom_profile["true_peak_ceiling_dbtp"]),
+                "boosts_quiet": None,
+                "notes": "Défini manuellement via les sliders GUI, pas un profil YAML prédéfini.",
+            }
+            if custom_profile.get("output_sample_rate") is not None:
+                profile_kwargs["output_sample_rate"] = int(custom_profile["output_sample_rate"])
+            if custom_profile.get("output_bit_depth") is not None:
+                profile_kwargs["output_bit_depth"] = str(custom_profile["output_bit_depth"])
+            profile = DestinationProfile(**profile_kwargs)
+        else:
+            profile = catalog.get(profile_key)
 
         in_path = Path(input_path)
         out_path = Path(output_dir) / f"{in_path.stem}_{profile_key}.wav"
@@ -91,10 +117,11 @@ def run_batch(
     profile_key: str,
     profiles_path: str | Path,
     max_workers: int = 4,
-    output_subtype: str = "PCM_24",
+    output_subtype: str | None = None,
     on_progress=None,
     suno_mode: bool = False,
     export_eq_presets: bool = False,
+    custom_profile: dict | None = None,
 ) -> BatchResult:
     """
     `on_progress`, si fourni, est appelé avec chaque `BatchFileOutcome` au
@@ -104,6 +131,8 @@ def run_batch(
     `suno_mode` : voir `chain.process_file`. `export_eq_presets` : si True,
     écrit chaque preset Pro-Q4 dynamique en `.aupreset` dans
     `output_dir/presets_aupreset/` (voir `preset_types.write_aupreset`).
+    `custom_profile` : voir `_process_one` — cibles LUFS/true peak définies
+    manuellement (sliders GUI), remplace le profil résolu via `profile_key`.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -122,6 +151,7 @@ def run_batch(
                 output_subtype,
                 suno_mode,
                 export_dir,
+                custom_profile,
             ): str(p)
             for p in input_paths
         }

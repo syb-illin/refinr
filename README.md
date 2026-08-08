@@ -50,10 +50,13 @@ reprend chaque fichier individuellement :
 |---|---|
 | 🎚️ **Gain staging** | Ramène le niveau à −18 LUFS avant tout traitement, pour ne pas exploser les plugins en aval |
 | 🔍 **Analyse** | Spectre, dynamique, écrêtage, largeur stéréo — par fichier, jamais un preset unique pour tout un dossier |
-| 🎛️ **EQ** | FabFilter Pro-Q4, preset choisi selon l'analyse |
-| 🔥 **Saturation** | Softube Saturn 2 ou BackBox HG2 |
-| 📼 **Tape** | Waves J37 |
-| 📊 **Leveling** | Vers le profil cible (Spotify, YouTube, Apple Music, DistroKid...) avec limiteur true-peak |
+| 🎛️ **EQ** | FabFilter Pro-Q4, bandes pilotées dynamiquement par fichier (fréquence/gain/Q/forme construits à partir de l'analyse, pas un preset figé) |
+| 🔥 **Saturation** | Baby Audio TAIP (presets tag-gated ; pilotage dynamique par fichier disponible en module séparé, pas encore branché par défaut) |
+| 📼 **Tape** | Waves J37 (presets tag-gated) |
+| 🥁 **Transient shaping** | Renforce l'attaque sur du matériel compressé aux transitoires molles (DSP maison, sans plugin AU) |
+| ↔️ **Largeur stéréo** | Resserre/élargit le canal Side selon la corrélation mesurée, mono-safe sous 150Hz (DSP maison) |
+| 🎚️ **Dynamique macro (LRA)** | Rider de gain lent piloté par la Loudness Range mesurée — réduit les sauts de volume couplet/refrain gênants sans aplatir la dynamique (DSP maison) |
+| 📊 **Leveling** | Vers le profil cible (Spotify, YouTube, Apple Music, DistroKid...) avec limiteur true-peak, repasses correctives automatiques si le QC échoue |
 | 📄 **Rapport** | JSON + HTML détaillé par fichier, batch parallèle |
 
 ---

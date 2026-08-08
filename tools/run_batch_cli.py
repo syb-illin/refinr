@@ -34,7 +34,14 @@ def main() -> None:
         "--presets-root", default=str(DEFAULT_PRESETS_ROOT), help="Racine de la bibliothèque de presets"
     )
     parser.add_argument("--workers", type=int, default=4, help="Nombre de process parallèles")
-    parser.add_argument("--subtype", default="PCM_24", choices=["PCM_16", "PCM_24", "PCM_32", "FLOAT"])
+    parser.add_argument(
+        "--subtype",
+        default=None,
+        choices=["PCM_16", "PCM_24", "PCM_32", "FLOAT"],
+        help="Override manuel du bit depth de sortie — par défaut (non fourni), utilise "
+        "profile.output_bit_depth (voir config/destination_profiles.yaml). Le sample rate "
+        "de sortie suit toujours profile.output_sample_rate, pas d'option CLI pour ça.",
+    )
     args = parser.parse_args()
 
     catalog = load_profiles(DEFAULT_PROFILES_PATH)

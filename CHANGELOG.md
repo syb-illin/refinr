@@ -8,6 +8,9 @@ suivent sont ajoutées automatiquement.
 
 <!-- CHANGELOG_INSERT -->
 
+## [0.4.0] - 2026-08-08 (minor)
+- feat: pilotage TAIP, outil de diff de presets J37, transient shaping, largeur stéréo, macro-dynamique LRA, correction QC itérative, sliders de format de livraison
+
 ## [0.3.0] - 2026-08-08 (minor)
 - feat: mode Suno/IA générée (2 corrections EQ opt-in, sourcées dans config/suno_artifacts_kb.md) + export des presets Pro-Q4 dynamiques en vrais .aupreset réutilisables dans Logic Pro (preset_types.write_aupreset), wiring GUI (menu Réglages) et batch
 

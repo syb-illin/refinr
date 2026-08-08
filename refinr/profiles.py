@@ -18,6 +18,19 @@ class DestinationProfile:
     true_peak_ceiling_dbtp: float
     boosts_quiet: bool | None
     notes: str = ""
+    # Sample rate / bit depth de LIVRAISON pour ce profil — AVANT cette
+    # fonctionnalité, la sortie passait au travers au sample rate/bit depth
+    # de la SOURCE quel qu'il soit (un WAV 96kHz/32-bit restait 96kHz/32-bit
+    # en sortie), ce qui n'a aucune raison de correspondre à ce qu'attend la
+    # plateforme cible. Défauts 44100Hz / PCM_24 : recherche 2026 (DistroKid,
+    # guides de mastering streaming) confirme que 24-bit/44.1kHz WAV est LE
+    # standard de livraison quasi-universel — les agrégateurs/plateformes
+    # transcodent eux-mêmes vers leur format final (AAC, Ogg Vorbis, etc.),
+    # donc pas de divergence réelle constatée entre profils à ce jour. Champs
+    # gardés PAR profil (pas une constante globale) pour rester ajustables
+    # si un cas particulier (hi-res, club edit, etc.) l'exigeait un jour.
+    output_sample_rate: int = 44100
+    output_bit_depth: str = "PCM_24"  # voir audio_io.save_wav: "PCM_16"|"PCM_24"|"PCM_32"|"FLOAT"
 
 
 @dataclasses.dataclass
@@ -51,6 +64,8 @@ def load_profiles(path: str | Path = DEFAULT_PROFILES_PATH) -> ProfileCatalog:
             true_peak_ceiling_dbtp=float(entry["true_peak_ceiling_dbtp"]),
             boosts_quiet=entry.get("boosts_quiet"),
             notes=entry.get("notes", "").strip(),
+            output_sample_rate=int(entry.get("output_sample_rate", 44100)),
+            output_bit_depth=str(entry.get("output_bit_depth", "PCM_24")),
         )
         for key, entry in data["profiles"].items()
     }

@@ -10,6 +10,17 @@
 #   silencieux que sa cible (utile pour décider si on peut se permettre
 #   plus de dynamique) ou si elle se contente seulement d'atténuer les
 #   masters trop forts (auquel cas monter au-delà de la cible ne sert à rien)
+# - output_sample_rate / output_bit_depth : format de LIVRAISON du WAV final
+#   (voir refinr/profiles.py::DestinationProfile). AVANT l'ajout de ces
+#   champs, la sortie gardait le sample rate/bit depth de la SOURCE quel
+#   qu'il soit — un WAV 96kHz/32-bit restait 96kHz/32-bit en sortie, ce qui
+#   ne correspond à aucune des specs de livraison réelles de ces plateformes.
+#   Recherche 2026 (DistroKid + guides de mastering streaming) : 24-bit /
+#   44.1kHz WAV est LE standard de livraison quasi-universel, les
+#   plateformes/agrégateurs transcodant eux-mêmes vers leur format final
+#   (AAC, Ogg Vorbis, etc.) — d'où les mêmes valeurs partout ci-dessous.
+#   Champs gardés PAR profil (pas une constante globale) pour rester
+#   ajustables si un cas particulier (hi-res, club edit...) l'exigeait.
 # - notes : contexte / caveats
 
 profiles:
@@ -18,6 +29,8 @@ profiles:
     target_lufs: -14.0
     true_peak_ceiling_dbtp: -1.0
     boosts_quiet: null  # dépend de la plateforme finale, cf. ci-dessous
+    output_sample_rate: 44100
+    output_bit_depth: PCM_24
     notes: >
       DistroKid ne normalise pas lui-même ; c'est un agrégateur qui distribue
       tel quel vers Spotify/Apple/YouTube/etc. -14 LUFS / -1 dBTP est un
@@ -29,6 +42,8 @@ profiles:
     target_lufs: -14.0
     true_peak_ceiling_dbtp: -1.0
     boosts_quiet: true
+    output_sample_rate: 44100
+    output_bit_depth: PCM_24
     notes: >
       Spotify propose Loud (-11), Normal (-14, mode par défaut le plus
       utilisé), Quiet (-19). Au-delà de -14 LUFS, Spotify atténue ; en
@@ -40,6 +55,8 @@ profiles:
     target_lufs: -14.0
     true_peak_ceiling_dbtp: -1.0
     boosts_quiet: false
+    output_sample_rate: 44100
+    output_bit_depth: PCM_24
     notes: >
       YouTube normalise vers le bas uniquement : un master à -18 LUFS reste
       joué à -18 LUFS (pas de remontée). Éviter de livrer trop silencieux
@@ -50,6 +67,8 @@ profiles:
     target_lufs: -16.0
     true_peak_ceiling_dbtp: -1.0
     boosts_quiet: true
+    output_sample_rate: 44100
+    output_bit_depth: PCM_24
     notes: >
       Apple Music est le plus "silencieux" des standards mainstream (-16 LUFS).
       Sound Check remonte et atténue selon les morceaux.
@@ -59,6 +78,8 @@ profiles:
     target_lufs: -14.0
     true_peak_ceiling_dbtp: -2.0
     boosts_quiet: false
+    output_sample_rate: 44100
+    output_bit_depth: PCM_24
     notes: "Seule grande plateforme à exiger -2 dBTP plutôt que -1 dBTP."
 
   tidal:
@@ -66,6 +87,8 @@ profiles:
     target_lufs: -14.0
     true_peak_ceiling_dbtp: -1.0
     boosts_quiet: false
+    output_sample_rate: 44100
+    output_bit_depth: PCM_24
     notes: "Aligné sur Spotify/YouTube côté cible LUFS."
 
   deezer:
@@ -73,6 +96,8 @@ profiles:
     target_lufs: -15.0
     true_peak_ceiling_dbtp: -1.0
     boosts_quiet: true
+    output_sample_rate: 44100
+    output_bit_depth: PCM_24
     notes: "Un cran plus silencieux que Spotify/YouTube."
 
   soundcloud:
@@ -80,6 +105,8 @@ profiles:
     target_lufs: -14.0
     true_peak_ceiling_dbtp: -1.0
     boosts_quiet: true
+    output_sample_rate: 44100
+    output_bit_depth: PCM_24
     notes: "Normalisation alignée sur le standard -14 LUFS."
 
   club_dj_loud:
@@ -87,6 +114,8 @@ profiles:
     target_lufs: -9.0
     true_peak_ceiling_dbtp: -0.3
     boosts_quiet: false
+    output_sample_rate: 44100
+    output_bit_depth: PCM_24
     notes: >
       Profil volontairement plus écrasé pour contextes sans normalisation
       (sets DJ, promos). À utiliser en connaissance de cause : sacrifie de
