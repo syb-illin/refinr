@@ -32,6 +32,7 @@ Gain staging → EQ → Saturation → Tape → Leveling par profil de destinati
 - [Installation manuelle](#installation-manuelle-si-tu-préfères-contrôler-chaque-étape)
 - [Peupler la bibliothèque de presets](#étape-2--peupler-la-bibliothèque-de-presets)
 - [Traiter des fichiers](#étape-3--traiter-des-fichiers)
+- [Mode Suno / IA générée, et export .aupreset](#mode-suno--ia-générée-et-export-aupreset)
 - [Profils de destination](#profils-de-destination)
 - [Versioning automatique](#versioning-automatique)
 - [Tests](#tests)
@@ -270,6 +271,27 @@ python3 gui/app.py
 ```
 Glisser-déposer des WAV, voir la preview des presets choisis par fichier,
 choisir le profil de destination, lancer le batch, ouvrir le rapport HTML.
+
+---
+
+## Mode Suno / IA générée, et export .aupreset
+
+Deux options dans le menu **Réglages** :
+
+- **Source Suno / IA générée** — ajoute deux corrections EQ ciblant les
+  artefacts connus des générateurs IA (Suno en particulier) : shelf HF à
+  14kHz (-2.5dB, contre le "fizz" de synthèse au-delà de ~14kHz) et bell à
+  4kHz (-2.5dB, contre le buzz métallique des formants vocaux
+  synthétiques). Sourcé et documenté dans
+  [`config/suno_artifacts_kb.md`](config/suno_artifacts_kb.md). **Désactivé
+  par défaut** — contrairement au reste de l'EQ dynamique (déduit de
+  l'analyse de CE fichier), ces deux corrections viennent d'une
+  connaissance a priori sur la source, donc opt-in strict.
+- **Exporter les presets .aupreset** — écrit le preset Pro-Q4 dynamique
+  décidé pour chaque fichier en vrai `.aupreset` dans
+  `<sortie>/presets_aupreset/`, réutilisable tel quel dans Logic Pro (ou
+  tout autre host AU). Sans cette option, le preset dynamique n'existe
+  qu'en mémoire le temps du traitement.
 
 ---
 

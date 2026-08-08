@@ -47,6 +47,8 @@ def _process_one(
     profile_key: str,
     profiles_path: str,
     output_subtype: str,
+    suno_mode: bool = False,
+    export_eq_preset_dir: str | None = None,
 ) -> BatchFileOutcome:
     """
     Fonction exécutée dans un process worker séparé : recharge la bibliothèque
@@ -61,7 +63,16 @@ def _process_one(
 
         in_path = Path(input_path)
         out_path = Path(output_dir) / f"{in_path.stem}_{profile_key}.wav"
-        report = process_file(in_path, out_path, library, profile, catalog, output_subtype=output_subtype)
+        report = process_file(
+            in_path,
+            out_path,
+            library,
+            profile,
+            catalog,
+            output_subtype=output_subtype,
+            suno_mode=suno_mode,
+            export_eq_preset_dir=export_eq_preset_dir,
+        )
         return BatchFileOutcome(input_path=input_path, success=True, report=report, error=None)
     except Exception:  # noqa: BLE001 - on veut capturer toute erreur pour ne pas planter tout le batch
         return BatchFileOutcome(input_path=input_path, success=False, report=None, error=traceback.format_exc())
@@ -82,14 +93,21 @@ def run_batch(
     max_workers: int = 4,
     output_subtype: str = "PCM_24",
     on_progress=None,
+    suno_mode: bool = False,
+    export_eq_presets: bool = False,
 ) -> BatchResult:
     """
     `on_progress`, si fourni, est appelé avec chaque `BatchFileOutcome` au
     fur et à mesure qu'il se termine (utile pour une barre de progression
     GUI) — voir gui/worker.py.
+
+    `suno_mode` : voir `chain.process_file`. `export_eq_presets` : si True,
+    écrit chaque preset Pro-Q4 dynamique en `.aupreset` dans
+    `output_dir/presets_aupreset/` (voir `preset_types.write_aupreset`).
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    export_dir = str(output_dir / "presets_aupreset") if export_eq_presets else None
 
     outcomes: list[BatchFileOutcome] = []
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -102,6 +120,8 @@ def run_batch(
                 profile_key,
                 str(profiles_path),
                 output_subtype,
+                suno_mode,
+                export_dir,
             ): str(p)
             for p in input_paths
         }

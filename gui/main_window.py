@@ -181,6 +181,26 @@ class MainWindow(QMainWindow):
         self.debug_action.toggled.connect(self._on_debug_toggled)
         settings_menu.addAction(self.debug_action)
 
+        settings_menu.addSeparator()
+
+        self.suno_mode_action = QAction("Source Suno / IA générée (corrections spécifiques)", self)
+        self.suno_mode_action.setCheckable(True)
+        self.suno_mode_action.setToolTip(
+            "Ajoute des corrections EQ supplémentaires ciblant les artefacts connus des "
+            "générateurs IA type Suno (fizz HF, buzz métallique vocal) — voir "
+            "config/suno_artifacts_kb.md. Désactivé par défaut : ne s'applique jamais "
+            "automatiquement, seulement si tu sais que la source vient d'un générateur IA."
+        )
+        settings_menu.addAction(self.suno_mode_action)
+
+        self.export_presets_action = QAction("Exporter les presets .aupreset (réutilisables dans Logic Pro)", self)
+        self.export_presets_action.setCheckable(True)
+        self.export_presets_action.setToolTip(
+            "Écrit le preset Pro-Q4 dynamique décidé pour chaque fichier en vrai .aupreset "
+            "dans <sortie>/presets_aupreset/, réutilisable tel quel dans Logic Pro."
+        )
+        settings_menu.addAction(self.export_presets_action)
+
         help_menu = menubar.addMenu("&Aide")
         about_action = QAction("À propos de Refinr", self)
         about_action.triggered.connect(self._on_about_clicked)
@@ -340,7 +360,7 @@ class MainWindow(QMainWindow):
         try:
             buffer = load_wav(path)
             file_analysis = analyze(buffer)
-            eq_bands = decide_bands(file_analysis)
+            eq_bands = decide_bands(file_analysis, suno_mode=self.suno_mode_action.isChecked())
             selection = select_chain(self.library, file_analysis, roles=(PluginRole.SATURATION, PluginRole.TAPE))
 
             tags_text = ", ".join(file_analysis.summary_tags())
@@ -420,6 +440,8 @@ class MainWindow(QMainWindow):
             profile_key=profile_key,
             profiles_path=str(DEFAULT_PROFILES_PATH),
             max_workers=self.workers_spin.value(),
+            suno_mode=self.suno_mode_action.isChecked(),
+            export_eq_presets=self.export_presets_action.isChecked(),
         )
         self.worker.file_done.connect(self._on_file_done)
         self.worker.finished_ok.connect(self._on_batch_finished)

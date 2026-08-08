@@ -33,6 +33,8 @@ class BatchWorker(QThread):
         profile_key: str,
         profiles_path: str,
         max_workers: int,
+        suno_mode: bool = False,
+        export_eq_presets: bool = False,
     ):
         super().__init__()
         self.input_paths = input_paths
@@ -41,6 +43,8 @@ class BatchWorker(QThread):
         self.profile_key = profile_key
         self.profiles_path = profiles_path
         self.max_workers = max_workers
+        self.suno_mode = suno_mode
+        self.export_eq_presets = export_eq_presets
 
     def run(self) -> None:
         try:
@@ -61,6 +65,8 @@ class BatchWorker(QThread):
                 profiles_path=self.profiles_path,
                 max_workers=self.max_workers,
                 on_progress=_on_progress,
+                suno_mode=self.suno_mode,
+                export_eq_presets=self.export_eq_presets,
             )
             report_paths = write_reports(result, self.output_dir, self.profile_key)
             self.finished_ok.emit(result, report_paths)

@@ -257,7 +257,7 @@ def make_dynamic_preset(name: str, bands: list[Band], natural_phase: bool = Fals
 # --------------------------------------------------------------------------
 
 
-def decide_bands(analysis: FileAnalysis) -> list[Band]:
+def decide_bands(analysis: FileAnalysis, suno_mode: bool = False) -> list[Band]:
     """
     Traduit les features mesurées sur CE fichier (analysis.py) en réglages
     Pro-Q4 concrets. Corrective, pas créative : vise à compenser ce que
@@ -276,6 +276,18 @@ def decide_bands(analysis: FileAnalysis) -> list[Band]:
       - `wide_stereo` : High Pass sur le canal Side à 150Hz/12dB-oct (garde
         les basses fréquences compatibles mono, évite les problèmes de phase
         en bas du spectre sur les sources très larges).
+
+    `suno_mode=True` (opt-in explicite, JAMAIS activé automatiquement par
+    l'analyse) ajoute deux corrections supplémentaires spécifiques aux
+    artefacts connus des générateurs IA type Suno — voir
+    `config/suno_artifacts_kb.md` pour les sources et le détail :
+      - Shelf HF à 14kHz pour le bruit de synthèse/fizz caractéristique du
+        codec de génération.
+      - Bell à 4kHz pour le "buzz" métallique/robotique typique des
+        formants vocaux synthétiques Suno (zone 3.5-5kHz rapportée).
+    Ces deux corrections ne sont PAS déduites d'une mesure faite sur ce
+    fichier précis (contrairement au reste de cette fonction) mais d'une
+    connaissance a priori sur la source — d'où l'opt-in strict.
     """
     bands: list[Band] = []
 
@@ -362,6 +374,38 @@ def decide_bands(analysis: FileAnalysis) -> list[Band]:
                     f"si les basses fréquences sont présentes dans le canal Side. Correction : High Pass "
                     f"150Hz appliqué UNIQUEMENT au canal Side (le Mid n'est pas touché), pour garder les "
                     f"basses fréquences compatibles mono sans réduire la largeur stéréo perçue en aigu."
+                ),
+            )
+        )
+
+    if suno_mode:
+        bands.append(
+            Band(
+                freq_hz=14000.0,
+                gain_db=-2.5,
+                shape="high_shelf",
+                stereo="stereo",
+                reason=(
+                    "Mode Suno/IA activé (config/suno_artifacts_kb.md, section 2) : les générateurs "
+                    "IA jettent le détail HF au-delà d'~14kHz et le remplacent par du bruit de "
+                    "synthèse ('fizz'), source de fatigue d'écoute. Correction a priori (pas déduite "
+                    "de l'analyse de ce fichier) : High Shelf 14kHz -2.5dB."
+                ),
+            )
+        )
+        bands.append(
+            Band(
+                freq_hz=4000.0,
+                gain_db=-2.5,
+                q=0.7,
+                shape="bell",
+                stereo="stereo",
+                reason=(
+                    "Mode Suno/IA activé (config/suno_artifacts_kb.md, section 3) : formants vocaux "
+                    "synthétiques statiques dans la zone 3.5-5kHz, perçus comme un buzz "
+                    "métallique/robotique typique de Suno. Correction a priori sur le mix entier "
+                    "(pas de séparation vocale disponible) : Bell 4kHz -2.5dB, Q large (0.7) pour "
+                    "rester modéré sur les autres éléments présents dans cette zone."
                 ),
             )
         )

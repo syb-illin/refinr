@@ -51,6 +51,27 @@ class PluginPreset:
     intensity: str | None = None  # "light" | "medium" | "heavy" si renseigné
 
 
+def write_aupreset(preset: PluginPreset, path: str | Path) -> Path:
+    """
+    Écrit `preset.full_state` en vrai fichier `.aupreset`, réutilisable tel
+    quel dans n'importe quel host AU (Logic Pro, GarageBand, etc.) — utile
+    en particulier pour les presets construits dynamiquement par
+    `proq4_control.make_dynamic_preset()` (jamais sauvegardés en fichier
+    autrement, puisque pilotés directement en mémoire vers `au_host`).
+
+    Format XML plist (`plistlib.FMT_XML`) plutôt que binaire : les vrais
+    `.aupreset` Apple/FabFilter acceptent les deux formats (plistlib les
+    lit indifféremment, voir `load_aupreset` ci-dessous), XML est plus sûr
+    à écrire à la main (pas de dépendance à un binaire externe) et reste
+    lisible pour du débogage.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as fh:
+        plistlib.dump(preset.full_state, fh, fmt=plistlib.FMT_XML)
+    return path
+
+
 def load_aupreset(path: str | Path) -> PluginPreset:
     path = Path(path)
     with open(path, "rb") as fh:

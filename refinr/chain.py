@@ -33,7 +33,7 @@ from . import loudness
 from .analysis import FileAnalysis, analyze
 from .audio_io import load_wav, save_wav
 from .preset_mapping import PresetLibrary, select_chain
-from .preset_types import ChainStepReport, PluginRole
+from .preset_types import ChainStepReport, PluginRole, write_aupreset
 from .profiles import DestinationProfile, ProfileCatalog
 from .proq4_control import Band, decide_bands, make_dynamic_preset
 
@@ -109,6 +109,8 @@ class FileProcessingReport:
     warnings: list[str]
     duration_seconds: float
     au_hosting_used: bool
+    suno_mode: bool = False
+    exported_presets: list[str] = dataclasses.field(default_factory=list)
 
 
 def _measurement_to_dict(m: loudness.LoudnessMeasurement) -> dict:
@@ -127,9 +129,22 @@ def process_file(
     profile: DestinationProfile,
     catalog: ProfileCatalog,
     output_subtype: str = "PCM_24",
+    suno_mode: bool = False,
+    export_eq_preset_dir: str | Path | None = None,
 ) -> FileProcessingReport:
+    """
+    `suno_mode` : active les corrections a priori spécifiques aux artefacts
+    connus des générateurs IA type Suno (voir `config/suno_artifacts_kb.md`
+    et `proq4_control.decide_bands`) — opt-in, jamais activé par défaut.
+
+    `export_eq_preset_dir` : si fourni, écrit le preset Pro-Q4 dynamique
+    décidé pour CE fichier en vrai `.aupreset` réutilisable dans Logic Pro
+    (voir `preset_types.write_aupreset`) — le preset dynamique n'existe
+    sinon qu'en mémoire, piloté directement vers `au_host`.
+    """
     t0 = time.monotonic()
     warnings: list[str] = []
+    exported_presets: list[str] = []
 
     input_path = Path(input_path)
     output_path = Path(output_path)
@@ -151,7 +166,7 @@ def process_file(
     # EQ Pro-Q4 : TOUJOURS piloté dynamiquement (proq4_control), jamais de
     # sélection de preset. Saturation/Tape : sélection par tags, faute
     # d'avoir reverse-engineered Saturn2/HG2/J37 pour l'instant.
-    eq_bands = decide_bands(file_analysis)
+    eq_bands = decide_bands(file_analysis, suno_mode=suno_mode)
     if eq_bands:
         eq_reason = (
             f"{len(eq_bands)} bande(s) EQ décidée(s) à partir du diagnostic ci-dessus (voir raison "
@@ -160,6 +175,14 @@ def process_file(
     else:
         eq_reason = "Aucune correction EQ jugée nécessaire — diagnostic dans les limites normales."
     eq_preset = make_dynamic_preset(f"refinr auto EQ — {input_path.name}", eq_bands)
+
+    if export_eq_preset_dir is not None and eq_bands:
+        export_path = Path(export_eq_preset_dir) / f"{input_path.stem}_ProQ4.aupreset"
+        try:
+            write_aupreset(eq_preset, export_path)
+            exported_presets.append(str(export_path))
+        except OSError as exc:
+            warnings.append(f"Export du preset .aupreset échoué pour {input_path.name}: {exc}")
 
     selection = select_chain(library, file_analysis, roles=(PluginRole.SATURATION, PluginRole.TAPE))
 
@@ -278,4 +301,6 @@ def process_file(
         warnings=warnings,
         duration_seconds=round(duration, 3),
         au_hosting_used=AU_HOSTING_AVAILABLE,
+        suno_mode=suno_mode,
+        exported_presets=exported_presets,
     )

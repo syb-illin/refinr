@@ -39,6 +39,45 @@ def test_process_file_end_to_end(tmp_path):
     assert report.gain_staging_db != 0.0  # source chaude -> gain staging doit bouger le niveau
 
 
+def test_process_file_exports_aupreset_when_requested(tmp_path):
+    catalog = load_profiles(PROFILES_PATH)
+    library = PresetLibrary.load(PRESETS_ROOT)
+    profile = catalog.get("spotify")
+    export_dir = tmp_path / "presets_aupreset"
+
+    out_path = tmp_path / "out.wav"
+    report = process_file(
+        FIXTURES / "hot_clipped_source.wav",
+        out_path,
+        library,
+        profile,
+        catalog,
+        export_eq_preset_dir=export_dir,
+    )
+
+    assert len(report.exported_presets) == 1
+    exported_path = Path(report.exported_presets[0])
+    assert exported_path.exists()
+    assert exported_path.parent == export_dir
+
+
+def test_process_file_suno_mode_flag_propagates_to_report(tmp_path):
+    catalog = load_profiles(PROFILES_PATH)
+    library = PresetLibrary.load(PRESETS_ROOT)
+    profile = catalog.get("spotify")
+
+    out_path = tmp_path / "out.wav"
+    report = process_file(
+        FIXTURES / "bright.wav",
+        out_path,
+        library,
+        profile,
+        catalog,
+        suno_mode=True,
+    )
+    assert report.suno_mode is True
+
+
 def test_batch_processes_all_files_in_parallel(tmp_path):
     files = sorted(str(p) for p in FIXTURES.glob("*.wav") if "smoketest" not in p.name)
     result = run_batch(
